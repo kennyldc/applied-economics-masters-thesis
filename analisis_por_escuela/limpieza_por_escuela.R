@@ -1,4 +1,5 @@
 # Script for cleaning the data for my master's thesis
+# Cleaning the data for a school level anaylisis.
 
 # check if libraries are installed, then load
 pacman::p_load(magrittr, tidyverse, foreign, janitor)
