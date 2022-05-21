@@ -153,7 +153,7 @@ res16 <- res16 |>
   crea_id_unico() |>
   # scale the grades (test results) variable to take a range from 0 to 1
   normaliza_calificaciones() |>
-  # adding "nivel" column (for years 2017-2019 where the column already exists as grado)
+  # adding "nivel" column that exists in years 2017-2019 data
   mutate(NIVEL = ifelse(GRADO == 3, "secundaria", "primaria")) |>
   select(CCT:GRADO, NIVEL, GRUPO:last_col())
 
