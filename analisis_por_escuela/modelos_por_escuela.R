@@ -1,7 +1,7 @@
 # Script for running some regresion models for my master's thesis
 
 # check if libraries are installed, then load
-pacman::p_load(magrittr, tidyverse, foreign, janitor, lfe)
+pacman::p_load(tidyverse, foreign, janitor, lfe)
 
 # Reading the panel with information of mean Planea school results  and crimes commited around each school in CDMX from 2016 to 2019 
 # Reading the file from Google Drive
