@@ -79,7 +79,7 @@ nuevo_panel_log_log[17:54] <- log(nuevo_panel_log_log[17:54]+1)
 # Making each regression (without weights) for all combinations of righ hand coefficient terms (including interactions)
 # The results are stored in a list (of dataframes) with the summaries of the estimate for each coefficient, the type of crime, 
 # the number of days and the distance, the standard deviation, p value and adj R2
-# To make the code less obscure, the first lapply iterates the making of the dataframe for each right hand coefficient term 
+# To make the code less obscure, the first lapply iterates the making of the dataframe for each right hand coefficient term combination
 # specified in the terminos_coef_posibles list (that is why the output has 4 daframes) with the use of an anonymous function,
 # (the syntax \(x) is a new feature from R 4.0)
 # The map_df produces the dataframe by iterating each coefficient from the combinations made above (see line 52 to 58) into
@@ -103,7 +103,7 @@ estimaciones_esp_sin_pesos_log_log <- lapply(terminos_coef_posibles, \(x){
 })
 
 estimaciones_esp_pesos_log_log <- lapply(terminos_coef_posibles, \(x){
-  map_df(x, \(x) reg_felm("MEAN_CALIF_ESP", x, nuevo_panel_log_log, pesos=NULL))
+  map_df(x, \(x) reg_felm("MEAN_CALIF_ESP", x, nuevo_panel_log_log, pesos="YES"))
 })
 
 # MEAN_CALIF_MAT -----------------------------------------
@@ -126,5 +126,5 @@ estimaciones_mat_sin_pesos_log_log <- lapply(terminos_coef_posibles, \(x){
 })
 
 estimaciones_mat_pesos_log_log <- lapply(terminos_coef_posibles, \(x){
-  map_df(x, \(x) reg_felm("MEAN_CALIF_MAT", x, nuevo_panel_log_log, pesos=NULL))
+  map_df(x, \(x) reg_felm("MEAN_CALIF_MAT", x, nuevo_panel_log_log, pesos="YES"))
 })
