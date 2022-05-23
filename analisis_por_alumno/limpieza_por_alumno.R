@@ -2,7 +2,7 @@
 # Cleaning the data for a school level anaylisis.
 
 # check if libraries are installed, then load
-pacman::p_load(tidyverse, foreign, googlesheets4, skimr, janitor, fastDummies)
+pacman::p_load(tidyverse, foreign, googlesheets4, skimr, janitor, fastDummies, tidyselect)
 
 # Util functions for cleaning the planea database ---------------------------
 
@@ -102,13 +102,14 @@ factor_a_numerica <- function(x){
                        TRUE ~ NA_real_))
 }
 
-# It will be useful in some cases to change the options that represents the number of products that the student have to only a dicotonomos variable (has or not)
-# In this function I collapse the letters to a dichotonomous factor (as a dummy)
+# It will be useful in some cases to change the options that represents the number of products that the student have
+# to only a dichotonomous variable (has or not). In this function I collapse the letters to a dichotonomous factor (as a dummy)
 colapsa_multilevel_a_dummy <- function(x){
   x <- fct_collapse(x ,"1" = c("B", "C", "D", "E"), "0" = "A")
   x <- as.numeric(levels(x))[x]
 }
 
+# This function pulls from the data the name of the variables that only have to answers (yes or no) in order to create a dummy
 variables_a_transformar_dummy <- function(data){
   map_dfc(data, \(x) {
     un <- unique(x[!is.na(x)])
@@ -118,9 +119,19 @@ variables_a_transformar_dummy <- function(data){
   pull(variables)
 }
 
+# This functions transforms the two class level factor into a dummy
 convierte_a_dummy <- function(x){
   x <- fct_recode(x, "1" = "A", "0" = "B")
   x <- as.numeric(levels(x))[x]
+}
+# This functions collapses multilevel factor variables that should be counted as two class level and then transforms it into a dummy
+colapsa_multilevel_a_dummy <- function(x){
+  x <- fct_collapse(x ,"1" = c("B", "C", "D", "E"), "0" = "A")
+  x <- as.numeric(levels(x))[x]
+}
+
+numeros_a_letras <- function(x){
+  fct_collapse(x , A = "1", B = "2", C = "3", D = "4", E = "5", "F" = "6", G = "7", H = "8", I = "9")
 }
 
 # Dictionary of the Social Context questionnaire database  --------------------------------------------------
@@ -195,10 +206,8 @@ resumen_cues17_pres <- my_skim(cues17 |> filter(ASISTENCIA == "PRES") |> select(
 cues17 <- cues17 |> mutate(across(c(P_03, P_10), ~ factor_a_numerica(.)),
                           across(P_38:P_40, ~ colapsa_multilevel_a_dummy(.)),
                           across(variables_a_transformar_dummy(cues17 |> select(-1, -2)), ~ convierte_a_dummy(.)))
-# To change multilevel factor to dummies I use fastDummies package, ignore NA and remove the original columns
-cues17 <- dummy_cols(cues17 |> select(-1,-2), ignore_na = TRUE, remove_selected_columns = TRUE) 
-# Arranging everything to alphabetical order.
-cues17 <- cues17 |> select(order(names(cues17)))
+# To change multilevel factors to dummies I use fastDummies package, ignore NA, remove the original columns and sort alphabetically
+cues17 <- cbind(cues17 |> select(1:2), dummy_cols(cues17 |> select(-1,-2), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
 
 # Elementary Schools Primarias 2018 --------------------------------------------------------------
 # Grades Database (Planea Results)
@@ -216,28 +225,31 @@ cues18 <- cues18 |>
   mutate(ENTIDAD = substr(NOFOLIO, 1,2)) |>
   filter(ENTIDAD == "09") |> select(-ENTIDAD)
 
+# Taking a closer look of the questions, for this project the more important questions were made in the second day (see dictionary in line 120)
+# The questions of the second day are comparable with the ones from other years. I will discard questions from the first day because are more psychology oriented.
+cues18 <- cues18 |> select(NOFOLIO, CCT, TURNO, EV2, BP01:last_col())
+
+# The missing number of students for the second day is 7847 of 100356 (7.8%)
+cues18 |> filter(EV2 =="N") |> count()
+
 # There is a problem in the labeling of some answers. 
 # Particularly, there are some ">" symbols which appears to be in the case where the student did not answer.
 # Collapsing ">" into the same level as NA
-cues18 <- cues18 |> mutate(across(6:last_col(), ~ fct_collapse(.,NULL = c(">", NA))))
+cues18 <- cues18 |> mutate(across(5:last_col(), ~ fct_collapse(.,NULL = c(">", NA))))
 
-# The questionnaire of 2018 were 2 set of questions taken in 2 days.
-# The first set of questions was applied the day of the spanish test and the other the day of the math test
-tabyl(cues18, EV1) # completion rate for the first day (s equals take the test, n did not took take the test)
-tabyl(cues18, EV2) # the second day
-tabyl(cues18, EV1, EV2) # the students in the database took the test at least one day
+# Getting a summary of the complete data to get a sense of the database
+resumen_cues18 <- my_skim(cues18 |> select(-NOFOLIO, -CCT, -TURNO, -EV2))
 
-# Getting a summary of the complete data
-resumen_cues18 <- my_skim(cues18 |> select(-NOFOLIO, -CCT, -TURNO, -EV1, -EV2))
+# In 2018 SEP instead of coding with the options in the book (letters), coded with numbers
+# I change it back to letters to apply the functions made above.
+cues18 <- cues18 |> mutate(across(c(BP01:BP94), ~ numeros_a_letras(.)))
+# Transformation of variables
+cues18 <- cues18 |> mutate(across(c(BP03, BP04), ~ factor_a_numerica(.)), # from factor to continous
+                        across(BP35:BP40, ~ colapsa_multilevel_a_dummy(.)), # multilevel factor to two class factor, then dummy
+                        across(variables_a_transformar_dummy(cues18 |> select(-1,-2,-3,-4)), ~ convierte_a_dummy(.))) # change two class factors to dummy
 
-# Taking a closer look to the questions, for this project the more important questions were made in the second day.
-# The questions of the second day are comparable with the ones from other years.
-# In that case, it is important to acknowledge that the missing number of students for the second day is 7847 of 100356 (7.8%)
-cues18 |> filter(EV2 =="N") |> count()
-
-# Leaving out from the analysis the people that not came the most important day 
-resumen_cues18_pres <- my_skim(cues18 |> filter(EV2 =="S") |> select(-NOFOLIO, -CCT, -TURNO, -EV1, -EV2))
-# The mean of completion rate of each column is 97.7 %
+# To change multilevel factors to dummies I use fastDummies package, ignore NA, remove the original columns and sort alphabetically
+cues18 <- cbind(cues18 |> select(1:4), dummy_cols(cues18 |> select(-1,-2,-3,-4), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
 
 # Junior High Schools 2019 SECUNDARIAS 2019 --------------------------------------------------------
 # Grades Database (Planea Results)
