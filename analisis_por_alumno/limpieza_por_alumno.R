@@ -2,7 +2,7 @@
 # Cleaning the data for a school level anaylisis.
 
 # check if libraries are installed, then load
-pacman::p_load(tidyverse, foreign, skimr, janitor)
+pacman::p_load(tidyverse, foreign, googlesheets4, skimr, janitor, fastDummies)
 
 # Util functions for cleaning the planea database ---------------------------
 
@@ -98,13 +98,15 @@ factor_a_numerica <- function(x){
                        x == "F" ~ 6,
                        x == "G" ~ 7,
                        x == "H" ~ 8,
-                       TRUE ~ 9))
+                       x == "I" ~ 9,
+                       TRUE ~ NA_real_))
 }
 
 # It will be useful in some cases to change the options that represents the number of products that the student have to only a dicotonomos variable (has or not)
 # In this function I collapse the letters to a dichotonomous factor (as a dummy)
 colapsa_multilevel_a_dummy <- function(x){
-  fct_collapse(x ,"1" = c("B", "C", "D", "E"), "0" = "A")
+  x <- fct_collapse(x ,"1" = c("B", "C", "D", "E"), "0" = "A")
+  x <- as.numeric(levels(x))[x]
 }
 
 variables_a_transformar_dummy <- function(data){
@@ -117,13 +119,20 @@ variables_a_transformar_dummy <- function(data){
 }
 
 convierte_a_dummy <- function(x){
-  fct_recode(x, "1" = "A", "0" = "B")
+  x <- fct_recode(x, "1" = "A", "0" = "B")
+  x <- as.numeric(levels(x))[x]
 }
 
 # Dictionary of the Social Context questionnaire database  --------------------------------------------------
 # Unfortunately, the social context information came to my without a dictionary of the questions and the name of the variables.
-# However I made one stored here: https://docs.google.com/spreadsheets/d/1Rt9O_AwCZwJbrXTVV_TpBauMwPNQtkap/edit?usp=sharing&ouid=112127317397935540277&rtpof=true&sd=true
+# However I made one stored here: https://docs.google.com/spreadsheets/d/1-f3QSQ8YRVnQfU0xf522z3KrRQX_POR_RS65WnoBE0g/edit?usp=sharing
 # In that dictionary I identified which questions were in each of the years of the available data.
+# The dictionary is not intended to  make data analysis, however I will bring into R the question and the code (variable for each year)
+diccionario <- googlesheets4::read_sheet("https://docs.google.com/spreadsheets/d/1-f3QSQ8YRVnQfU0xf522z3KrRQX_POR_RS65WnoBE0g/edit?usp=sharing")
+# Getting all the questions that were made at least one year
+diccionario <- diccionario |> select(pregunta, cues17, cues18, cues19) |> remove_empty()
+# An alternative (maybe useful for the analysis) would be to use only questions that were made every year.
+preguntas_todos <- diccionario |> drop_na()
 
 # Reading the panel with information of crimes commited around each school in CDMX from 2016 to 2019  --------------------------------------------------------
 # Reading the file from Google Drive
@@ -178,14 +187,18 @@ resumen_cues17 <- my_skim(cues17 |> select(-NOFOLIO, -ASISTENCIA))
 # Without the people that did not take the test, the mean completion rate of each variable is 99.51%
 resumen_cues17_pres <- my_skim(cues17 |> filter(ASISTENCIA == "PRES") |> select(-NOFOLIO, -ASISTENCIA))
 
-# After making the dictionary (see line 90) I realized that the following variables need some adjustments.
-# Variables P_03 and P_10 was labelled as multilevel factor but in reality it is better understood as a continuous variable
+# After making the dictionary (see line 126) I realized that the following variables need some adjustments:
+# Variables P_03 and P_10 were labelled as multilevel factor but in reality it is better understand them as continuous variables
 # Also, I collapsed P_38 to P_40 to code the variable as a dummy (whether it has a certain good or not)
 # And finally "variables_a_transformar_dummy" (see above) finds which columns where labeled as "A" (yes) and "B" (no).
 # I convert those into a dummy (1 if it has the feature, 0 in any other case)
 cues17 <- cues17 |> mutate(across(c(P_03, P_10), ~ factor_a_numerica(.)),
                           across(P_38:P_40, ~ colapsa_multilevel_a_dummy(.)),
-                         across(variables_a_transformar_dummy(cues17 |> select(-1, -2)), ~ convierte_a_dummy(.)))
+                          across(variables_a_transformar_dummy(cues17 |> select(-1, -2)), ~ convierte_a_dummy(.)))
+# To change multilevel factor to dummies I use fastDummies package, ignore NA and remove the original columns
+cues17 <- dummy_cols(cues17 |> select(-1,-2), ignore_na = TRUE, remove_selected_columns = TRUE) 
+# Arranging everything to alphabetical order.
+cues17 <- cues17 |> select(order(names(cues17)))
 
 # Elementary Schools Primarias 2018 --------------------------------------------------------------
 # Grades Database (Planea Results)
