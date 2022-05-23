@@ -244,7 +244,7 @@ resumen_cues18 <- my_skim(cues18 |> select(-NOFOLIO, -CCT, -TURNO, -EV2))
 # I change it back to letters to apply the functions made above.
 cues18 <- cues18 |> mutate(across(c(BP01:BP94), ~ numeros_a_letras(.)))
 # Transformation of variables
-cues18 <- cues18 |> mutate(across(c(BP03, BP04), ~ factor_a_numerica(.)), # from factor to continous
+cues18 <- cues18 |> mutate(across(c(BP03, BP04), ~ factor_a_numerica(.)), # from factor to continuous
                         across(BP35:BP40, ~ colapsa_multilevel_a_dummy(.)), # multilevel factor to two class factor, then dummy
                         across(variables_a_transformar_dummy(cues18 |> select(-1,-2,-3,-4)), ~ convierte_a_dummy(.))) # change two class factors to dummy
 
@@ -282,4 +282,13 @@ cues19 <- cues19 |> mutate(across(4:last_col(), ~ fct_collapse(.,NULL = c(">", N
 # All Students that are in the database have at least one answer in the social questionnaire. 
 resumen_cues19 <- my_skim(cues19 |> select(-NOFOLIO, -CCT, -TURNO))
 
+# Changing it back answers coded as numbers to letters in order to apply the functions made above.
+cues19 <- cues19 |> mutate(across(c(R01:last_col()), ~ numeros_a_letras(.)))
+# Transformation of variables
+cues19 <- cues19 |> mutate(across(c(R01, R02), ~ factor_a_numerica(.)), # from factor to continuous
+                           across(R28:R32, ~ colapsa_multilevel_a_dummy(.)), # multilevel factor to two class factor, then dummy
+                           across(variables_a_transformar_dummy(cues19 |> select(-1,-2,-3)), ~ convierte_a_dummy(.))) # change two class factors to dummy
+
+# To change multilevel factors to dummies I use fastDummies package, ignore NA, remove the original columns and sort alphabetically
+cues19 <- cbind(cues19 |> select(1:3), dummy_cols(cues19 |> select(-1,-2,-3), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
 
