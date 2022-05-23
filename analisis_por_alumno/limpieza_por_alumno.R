@@ -179,17 +179,13 @@ resumen_cues17 <- my_skim(cues17 |> select(-NOFOLIO, -ASISTENCIA))
 resumen_cues17_pres <- my_skim(cues17 |> filter(ASISTENCIA == "PRES") |> select(-NOFOLIO, -ASISTENCIA))
 
 # After making the dictionary (see line 90) I realized that the following variables need some adjustments.
-
-wola <- cues17 |> mutate(across(c(P_03, P_10), ~ factor_a_numerica(.)),
+# Variables P_03 and P_10 was labelled as multilevel factor but in reality it is better understood as a continuous variable
+# Also, I collapsed P_38 to P_40 to code the variable as a dummy (whether it has a certain good or not)
+# And finally "variables_a_transformar_dummy" (see above) finds which columns where labeled as "A" (yes) and "B" (no).
+# I convert those into a dummy (1 if it has the feature, 0 in any other case)
+cues17 <- cues17 |> mutate(across(c(P_03, P_10), ~ factor_a_numerica(.)),
                           across(P_38:P_40, ~ colapsa_multilevel_a_dummy(.)),
                          across(variables_a_transformar_dummy(cues17 |> select(-1, -2)), ~ convierte_a_dummy(.)))
-
-nom <- resumen_cues17 |> filter(factor.n_unique == 2)
-
-
-wola <- cues17 |> mutate(across(variables_a_transformar_dummy(cues17 |> select(-1, -2)), ~ convierte_a_dummy(.)))
-
-#ME FALTA CREAR LA QUE PASA DE BINARIA A B a DUMMY
 
 # Elementary Schools Primarias 2018 --------------------------------------------------------------
 # Grades Database (Planea Results)
