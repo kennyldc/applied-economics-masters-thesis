@@ -274,8 +274,8 @@ planea_escuelas_19 <- base_info_x_escuela(res19, 2019)
 
 nuevo_panel <- rbind(planea_escuelas_prim_16, planea_escuelas_sec_16, planea_escuelas_17, planea_escuelas_18, planea_escuelas_19) |> arrange(ID_UNICO)
 
-# As noted above, some schools were in the grades databases but not in the crime database (i.e. no estaban en la base de la SEP que usé para extraer a mano los valores de las coordenadas)
-# Looking closer to the number of NA's, it seems to be a minor problem
+# As noted above, some schools were in the grades databases but not in the crime database, (i.e. no estaban en la base de la SEP que usé para extraer a mano los valores de las coordenadas)
+# Looking closer to the number of NA's, it seems to be a minor problem, 487 out of 10233 (4.75 %)
 nuevo_panel |>  filter(is.na(CASO)) |> count()
 
 # However, I replace the values with NA (particularly the number of crimes) with the mean of the neighborhood (localidad) for each year
