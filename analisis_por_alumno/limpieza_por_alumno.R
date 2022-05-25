@@ -134,6 +134,42 @@ numeros_a_letras <- function(x){
   fct_collapse(x , A = "1", B = "2", C = "3", D = "4", E = "5", "F" = "6", G = "7", H = "8", I = "9")
 }
 
+# Function to merge the social context data with the test results and the number of crimes around the schoool.
+# Because the format is basically the same for each year, I can use only one function.
+
+junta_resultados_crimen <- function(year){
+  if(year==2017){
+    cuestionario <- cues17
+    resultados <- res17
+    internal_year <- 2017
+    first_question <- deparse(substitute(P_01_A)) # the first column that corresponds to a question in the database
+    last_question <- deparse(substitute(P_86_E)) # the last column that corresponds to a question
+  }
+  else{
+    if(year==2018){
+      cuestionario <- cues18
+      resultados <- res18
+      internal_year <- 2018
+      first_question <- deparse(substitute(BP01_A))
+      last_question <- deparse(substitute(BP94_C))
+    }
+    else{
+      if(year==2019){
+        cuestionario <- cues19
+        resultados <- res19
+        internal_year <- 2019
+        first_question <- deparse(substitute(R01))
+        last_question <- deparse(substitute(R81_D))
+      }
+      else{stop("Este año no está incluido en las base")}
+    }
+  }
+  cuestionario |> left_join(resultados |> select(NOFOLIO:N_TURNO_BASE, NIVEL, MUNICIPIO:NOMBRE_LOC, NVL_ESP:last_col())) |>
+    left_join(nuevo_panel |> filter(AÑO==internal_year) |> select(ID_UNICO, FINANCIAMIENTO, INDICE_REZ, N_PRESENTARON:last_col())) |>
+    select(NOFOLIO, ASISTENCIA, CCT:NIVEL, FINANCIAMIENTO, INDICE_REZ, MUNICIPIO:CALIF_MAT, N_PRESENTARON:MEAN_CALIF_MAT, all_of(first_question):all_of(last_question), INC_TIPO1_D250_T90H:INC_TIPO3_D1000_T10H) |>
+    rename(MEAN_CALIF_ESP_ESCUELA = MEAN_CALIF_ESP, MEAN_CALIF_MAT_ESCUELA = MEAN_CALIF_MAT, ASISTENCIA_CONTEXTO = ASISTENCIA)
+}
+
 # Dictionary of the Social Context questionnaire database  --------------------------------------------------
 # Unfortunately, the social context information came to my without a dictionary of the questions and the name of the variables.
 # However I made one stored here: https://docs.google.com/spreadsheets/d/1-f3QSQ8YRVnQfU0xf522z3KrRQX_POR_RS65WnoBE0g/edit?usp=sharing
@@ -145,16 +181,15 @@ diccionario <- diccionario |> select(pregunta, cues17, cues18, cues19) |> remove
 # An alternative (maybe useful for the analysis) would be to use only questions that were made every year.
 preguntas_todos <- diccionario |> drop_na()
 
-# Reading the panel with information of crimes commited around each school in CDMX from 2016 to 2019  --------------------------------------------------------
+# Reading the panel with information of crimes committed around each school in CDMX from 2016 to 2019  --------------------------------------------------------
 # Reading the file from Google Drive
-id <- "1dH27RW6-Ly05_UAnmfDTmmfhuAeD5iJ2"
-panel_log <- read.csv(sprintf("https://docs.google.com/uc?id=%s&export=download", id))
-panel_log %<>% arrange(id_unico)
-# changing variable names to uppercase
-names(panel_log) <- toupper(names(panel_log))
+id_file <- "1Ax2Ucq91VcGqvaeF43u2KGF0hC9OFPkS"
+nuevo_panel <- read.csv(sprintf("https://docs.google.com/uc?id=%s&export=download", id_file))
+# This panel is the one already processed and used for the school analysis.
+
 # changing some variables from class character to class factor
-panel_log <- panel_log |>
-  mutate(across(c(FINANCIAMIENTO, NIVEL, CASO, CLAVE_TURNO), as.factor))
+nuevo_panel <- nuevo_panel |>
+  mutate(across(c(TURNO_BASE, N_TURNO_BASE, GRADO, NIVEL, FINANCIAMIENTO), as.factor))
 
 # Results of the Planea test for CDMX's schools in 2016 ---------------------------------------------
 # This year contains test results for school level 6 and school level 9
@@ -209,6 +244,9 @@ cues17 <- cues17 |> mutate(across(c(P_03, P_10), ~ factor_a_numerica(.)),
 # To change multilevel factors to dummies I use fastDummies package, ignore NA, remove the original columns and sort alphabetically
 cues17 <- cbind(cues17 |> select(1:2), dummy_cols(cues17 |> select(-1,-2), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
 
+# Merging the social context information with the test results and the number of crimes around the school for that year
+caracteristicas_2017 <- junta_resultados_crimen(2017)
+
 # Elementary Schools Primarias 2018 --------------------------------------------------------------
 # Grades Database (Planea Results)
 res18 <- read.dbf("/Users/carloslopezdelacerda/Documents/tesis_eco_aplicada/solic_itam_2018/pb2018_alumnos.DBF") |>
@@ -229,8 +267,12 @@ cues18 <- cues18 |>
 # The questions of the second day are comparable with the ones from other years. I will discard questions from the first day because are more psychology oriented.
 cues18 <- cues18 |> select(NOFOLIO, CCT, TURNO, EV2, BP01:last_col())
 
+# In fact, variable EV2 refers to assistance. Changing the name and the values of present or not to match with cues17
+cues18 <- cues18 |> rename(ASISTENCIA = EV2) |>
+  mutate(ASISTENCIA = as.factor(if_else(ASISTENCIA=="S", "PRES","NP")))
+
 # The missing number of students for the second day is 7847 of 100356 (7.8%)
-cues18 |> filter(EV2 =="N") |> count()
+cues18 |> filter(ASISTENCIA =="NP") |> count()
 
 # There is a problem in the labeling of some answers. 
 # Particularly, there are some ">" symbols which appears to be in the case where the student did not answer.
@@ -238,7 +280,7 @@ cues18 |> filter(EV2 =="N") |> count()
 cues18 <- cues18 |> mutate(across(5:last_col(), ~ fct_collapse(.,NULL = c(">", NA))))
 
 # Getting a summary of the complete data to get a sense of the database
-resumen_cues18 <- my_skim(cues18 |> select(-NOFOLIO, -CCT, -TURNO, -EV2))
+resumen_cues18 <- my_skim(cues18 |> select(-NOFOLIO, -CCT, -TURNO, -ASISTENCIA))
 
 # In 2018 SEP instead of coding with the options in the book (letters), coded with numbers
 # I change it back to letters to apply the functions made above.
@@ -250,6 +292,9 @@ cues18 <- cues18 |> mutate(across(c(BP03, BP04), ~ factor_a_numerica(.)), # from
 
 # To change multilevel factors to dummies I use fastDummies package, ignore NA, remove the original columns and sort alphabetically
 cues18 <- cbind(cues18 |> select(1:4), dummy_cols(cues18 |> select(-1,-2,-3,-4), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
+
+# Merging the social context information with the test results and the number of crimes around the school for that year
+caracteristicas_2018 <- junta_resultados_crimen(2018)
 
 # Junior High Schools 2019 SECUNDARIAS 2019 --------------------------------------------------------
 # Grades Database (Planea Results)
@@ -279,16 +324,20 @@ cues19 <- cues19 |> select(NOFOLIO, CCT, TURNO, 2:last_col())
 # Collapsing ">" into the same level as NA
 cues19 <- cues19 |> mutate(across(4:last_col(), ~ fct_collapse(.,NULL = c(">", NA))))
 
-# All Students that are in the database have at least one answer in the social questionnaire. 
-resumen_cues19 <- my_skim(cues19 |> select(-NOFOLIO, -CCT, -TURNO))
+# All Students that are in the database have at least one answer in the social questionnaire.
+cues19 <- cues19 |> mutate(ASISTENCIA="PRES", .after = TURNO)
+
+resumen_cues19 <- my_skim(cues19 |> select(-NOFOLIO, -CCT, -TURNO, -ASISTENCIA))
 
 # Changing it back answers coded as numbers to letters in order to apply the functions made above.
 cues19 <- cues19 |> mutate(across(c(R01:last_col()), ~ numeros_a_letras(.)))
 # Transformation of variables
 cues19 <- cues19 |> mutate(across(c(R01, R02), ~ factor_a_numerica(.)), # from factor to continuous
                            across(R28:R32, ~ colapsa_multilevel_a_dummy(.)), # multilevel factor to two class factor, then dummy
-                           across(variables_a_transformar_dummy(cues19 |> select(-1,-2,-3)), ~ convierte_a_dummy(.))) # change two class factors to dummy
+                           across(variables_a_transformar_dummy(cues19 |> select(-1,-2,-3,-4)), ~ convierte_a_dummy(.))) # change two class factors to dummy
 
 # To change multilevel factors to dummies I use fastDummies package, ignore NA, remove the original columns and sort alphabetically
-cues19 <- cbind(cues19 |> select(1:3), dummy_cols(cues19 |> select(-1,-2,-3), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
+cues19 <- cbind(cues19 |> select(1:4), dummy_cols(cues19 |> select(-1,-2,-3, -4), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
 
+# Merging the social context information with the test results and the number of crimes around the school for that year
+caracteristicas_2019 <- junta_resultados_crimen(2019)
