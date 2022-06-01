@@ -2,7 +2,7 @@
 # Cleaning the data for a school level anaylisis.
 
 # check if libraries are installed, then load
-pacman::p_load(magrittr, tidyverse, foreign, janitor)
+pacman::p_load(magrittr, tidyverse, foreign, janitor, skimr)
 
 # Reading the panel with information of crimes commited around each school in CDMX from 2016 to 2019 (more info in my repo) --------------------------------------------------------
 # Reading the file from Google Drive
@@ -16,6 +16,8 @@ panel_log <- panel_log |>
   mutate(across(c(FINANCIAMIENTO, NIVEL, CASO, CLAVE_TURNO), as.factor))
 
 # Util functions for cleaning the data ---------------------------
+
+`%!in%` <- Negate(`%in%`) # not in operator
 
 # The grades databases for each year have (almost) the same format which makes the work easier and suitable for functions
 
@@ -167,7 +169,7 @@ prim16 <- res16 |> filter(GRADO == 6)
 # filtering the crime database to keep level 6
 delitos_esc_16_prim  <- panel_log |> filter(NIVEL == "PRIMARIA" & YEAR == 2016)
 
-# ANALISIS POR ESCUELAS - ANALYSIS AT THE SCHOOL LEVEL
+# ANALYSIS AT THE SCHOOL LEVEL
 
 # Looking which schools are in the grades (test results) database but not in the crime database
 no_estan_prim_16 <- no_estan(prim16, 2016)
@@ -271,25 +273,41 @@ planea_escuelas_19 <- base_info_x_escuela(res19, 2019)
 # Getting data together ---------------------------------------
 
 # With the databases constructed above for each year, I create a new panel
+nuevo_panel <- rbind(planea_escuelas_prim_16, 
+                     planea_escuelas_sec_16, 
+                     planea_escuelas_17, 
+                     planea_escuelas_18, 
+                     planea_escuelas_19) |> arrange(ID_UNICO)
 
-nuevo_panel <- rbind(planea_escuelas_prim_16, planea_escuelas_sec_16, planea_escuelas_17, planea_escuelas_18, planea_escuelas_19) |> arrange(ID_UNICO)
+# There is a minor labeling mismatch in the school levels which I correct here:
+nuevo_panel <- nuevo_panel |> mutate(GRADO = fct_recode(nuevo_panel$GRADO, "3" = "9"), # 3 and 9 are equivalent
+                                     NIVEL = toupper(NIVEL)) # in some cases the level was coded as "secundaria" in others as "SECUNDARIA"
 
-# As noted above, some schools were in the grades databases but not in the crime database, (i.e. no estaban en la base de la SEP que usé para extraer a mano los valores de las coordenadas)
-# Looking closer to the number of NA's, it seems to be a minor problem, 487 out of 10233 (4.75 %)
-nuevo_panel |>  filter(is.na(CASO)) |> count()
+# There are schools (231 out of 4,587) for which I only have observations for one year.
+nuevo_panel |> group_by(ID_UNICO) |> count() |> nrow() # total of schools 4587
+nuevo_panel |> group_by(ID_UNICO) |> count() |> filter(n==1) |> nrow() # 231 school with only one year
 
-# However, I replace the values with NA (particularly the number of crimes) with the mean of the neighborhood (localidad) for each year
+# For the construction of the panel I will leave the latter out because I need at least two observations for each school
+escuelas_n1 <- nuevo_panel |> group_by(ID_UNICO) |> count() |> filter(n==1) |> pull(ID_UNICO) # id of schools with obs for only one year
+nuevo_panel <- nuevo_panel |> filter(ID_UNICO %!in% escuelas_n1) # filtering out those schools
+nuevo_panel |> group_by(ID_UNICO) |> count() |> nrow() # now I have 4356 schools
 
-nuevo_panel <- nuevo_panel |> 
-  group_by(LOCALIDAD, AÑO) |> 
-  mutate_if(is.numeric, function(x) ifelse(is.na(x), mean(x, na.rm = TRUE), x)) |>
-  ungroup()
+# 3066 of 4556 schools have at least info for two years (70.39%), and 1290 of 4356 (29.61%) info for 3 years.
+tabyl(nuevo_panel |> group_by(ID_UNICO) |> count() |> pull(n)) 
 
-# with this solution, only 10 out of 10233 schools do not have the number of crimes commited around the school
-nuevo_panel |> filter(is.na(INC_D250_T90H)) |> count()
+# As noted above, some schools were in the grades databases but not in the crime database, 
+# (i.e. those schools were not part of a SEP database that I used before to extract manually the coordinates)
+# Looking closer to the number of NA's, it seems to be a minor problem
+nuevo_panel |>  filter(is.na(CASO)) |> nrow() #256 observations (of 10,002 entries)
+nuevo_panel |>  filter(is.na(CASO)) |> group_by(ID_UNICO) |> count() |> nrow() # comprising 104 schools (of 4,356 useful for the problem)
 
-# Removing those rows from the panel
-nuevo_panel <- nuevo_panel |> filter(!is.na(INC_D250_T90H))
+# I will leave those schools out: 
+# 1) It is a very small proportion of the total of schools used for this project 2.39 %
+# 2) Imputing a value does not make sense by the definition of the problem. 
+# It is the number of crimes that define the main impact and the phenomenon I'm trying to control in the fixed effects specification.
+
+# Filtering out
+nuevo_panel <- nuevo_panel |>  filter(!is.na(CASO))
 
 # Writing the new panel into a csv
 readr::write_excel_csv(nuevo_panel,"/Users/carloslopezdelacerda/Documents/tesis_eco_aplicada/nuevo_panel.csv")
