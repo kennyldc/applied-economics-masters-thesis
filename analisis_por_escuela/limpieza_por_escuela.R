@@ -2,7 +2,7 @@
 # Cleaning the data for a school level anaylisis.
 
 # check if libraries are installed, then load
-pacman::p_load(magrittr, tidyverse, foreign, janitor, skimr)
+pacman::p_load(magrittr, tidyverse, foreign, janitor, forcats)
 
 # Reading the panel with information of crimes commited around each school in CDMX from 2016 to 2019 (more info in my repo) --------------------------------------------------------
 # Reading the file from Google Drive
