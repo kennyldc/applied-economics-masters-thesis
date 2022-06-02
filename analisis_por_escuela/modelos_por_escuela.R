@@ -81,8 +81,10 @@ terminos_coef_posibles <- list(incidentes = combinaciones_incidentes,
 
 # I follow the common practice to add a value of 1 in order to make the log-log transformation.
 # I decide to make the transformation OUTSIDE the regression specification in order to use the function made above
+# Note that I add a constant value this might or might not be problematic with certain assumptions
+constante <- 0.001
 nuevo_panel_log_log <- nuevo_panel
-nuevo_panel_log_log[17:54] <- log(nuevo_panel_log_log[17:54]+1)
+nuevo_panel_log_log[17:54] <- log(nuevo_panel_log_log[17:54]+constante)
 
 # Wrapping estimations inside a function.
 # The following function allows to select the section, student level (elementary or junior high school), and either to include weights 
