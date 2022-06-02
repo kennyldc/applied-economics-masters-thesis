@@ -78,6 +78,10 @@ limpia <- function(data){
     normaliza_calificaciones()
 }
 
+escuela_con_crimen <- function(year){
+  nuevo_panel |> filter(AÑO == year) |> pull(ID_UNICO)
+}
+
 # Util functions for cleaning the social context database ---------------------------
 
 # we can get really quick summaries of the data by using the skimr package
@@ -142,16 +146,16 @@ junta_resultados_crimen <- function(year){
     cuestionario <- cues17
     resultados <- res17
     internal_year <- 2017
-    first_question <- deparse(substitute(P_01_A)) # the first column that corresponds to a question in the database
-    last_question <- deparse(substitute(P_86_E)) # the last column that corresponds to a question
+    first_question <- deparse(substitute(P_03)) # the first column that corresponds to a question in the database
+    last_question <- deparse(substitute(P_77_D)) # the last column that corresponds to a question
   }
   else{
     if(year==2018){
       cuestionario <- cues18
       resultados <- res18
       internal_year <- 2018
-      first_question <- deparse(substitute(BP01_A))
-      last_question <- deparse(substitute(BP94_C))
+      first_question <- deparse(substitute(BP03))
+      last_question <- deparse(substitute(BP77_D))
     }
     else{
       if(year==2019){
@@ -159,7 +163,7 @@ junta_resultados_crimen <- function(year){
         resultados <- res19
         internal_year <- 2019
         first_question <- deparse(substitute(R01))
-        last_question <- deparse(substitute(R81_D))
+        last_question <- deparse(substitute(R58_D))
       }
       else{stop("Este año no está incluido en las base")}
     }
@@ -167,7 +171,8 @@ junta_resultados_crimen <- function(year){
   cuestionario |> left_join(resultados |> select(NOFOLIO:N_TURNO_BASE, NIVEL, MUNICIPIO:NOMBRE_LOC, NVL_ESP:last_col())) |>
     left_join(nuevo_panel |> filter(AÑO==internal_year) |> select(ID_UNICO, FINANCIAMIENTO, INDICE_REZ, N_PRESENTARON:last_col())) |>
     select(NOFOLIO, ASISTENCIA, CCT:NIVEL, FINANCIAMIENTO, INDICE_REZ, MUNICIPIO:CALIF_MAT, N_PRESENTARON:MEAN_CALIF_MAT, all_of(first_question):all_of(last_question), INC_TIPO1_D250_T90H:INC_TIPO3_D1000_T10H) |>
-    rename(MEAN_CALIF_ESP_ESCUELA = MEAN_CALIF_ESP, MEAN_CALIF_MAT_ESCUELA = MEAN_CALIF_MAT, ASISTENCIA_CONTEXTO = ASISTENCIA)
+    rename(MEAN_CALIF_ESP_ESCUELA = MEAN_CALIF_ESP, MEAN_CALIF_MAT_ESCUELA = MEAN_CALIF_MAT, ASISTENCIA_CONTEXTO = ASISTENCIA) |>
+    filter(!is.na(INC_D250_T10H))
 }
 
 # Dictionary of the Social Context questionnaire database  --------------------------------------------------
@@ -178,7 +183,7 @@ junta_resultados_crimen <- function(year){
 diccionario <- googlesheets4::read_sheet("https://docs.google.com/spreadsheets/d/1-f3QSQ8YRVnQfU0xf522z3KrRQX_POR_RS65WnoBE0g/edit?usp=sharing")
 # Getting all the questions that were made at least one year
 diccionario <- diccionario |> select(pregunta, cues17, cues18, cues19) |> remove_empty()
-# An alternative (maybe useful for the analysis) would be to use only questions that were made every year.
+# For the sake of comparability in each year of the analysis I will only use questions that were made every year.
 preguntas_todos <- diccionario |> drop_na()
 
 # Reading the panel with information of crimes committed around each school in CDMX from 2016 to 2019  --------------------------------------------------------
@@ -186,6 +191,10 @@ preguntas_todos <- diccionario |> drop_na()
 id_file <- "1Ax2Ucq91VcGqvaeF43u2KGF0hC9OFPkS"
 nuevo_panel <- read.csv(sprintf("https://docs.google.com/uc?id=%s&export=download", id_file))
 # This panel is the one already processed and used for the school analysis.
+# For the sake of comparability I will use the same set of schools
+# Recalling from the analysis at the school level:
+# In this panel I have information of 4252 schools: 5920 elementary, 3826 junior high
+# each school has at least observations for 2 years.
 
 # changing some variables from class character to class factor
 nuevo_panel <- nuevo_panel |>
@@ -200,6 +209,9 @@ res16 <- limpia(res16) |>
   # adding "nivel" column that exists in years 2017-2019 data
   mutate(NIVEL = ifelse(GRADO == 3, "secundaria", "primaria")) |>
   select(1:GRADO, NIVEL, GRUPO:last_col())
+
+# Filter results to only include schools with crime info
+res16 <- res16 |> filter(ID_UNICO %in% escuela_con_crimen(2016))
 
 # In year 2016, SEP did not make the Social Context questionnaire 
 
@@ -226,6 +238,9 @@ cues17 |> filter(if_all(2:last_col(), is.na)) |> count()
 cues17 <- cues17 |> mutate(ASISTENCIA = if_else(if_all(2:last_col(), is.na), "NP", "PRES")) |>
   select(NOFOLIO, ASISTENCIA, 2:last_col())
 
+# Filter to only have questions that were made in every year.
+cues17 <- cues17 |> select(NOFOLIO, ASISTENCIA, all_of(preguntas_todos |> pull(cues17)))
+
 # Skim (with my personalized skim) to get a summary of the database without the id and the assistance variable
 resumen_cues17 <- my_skim(cues17 |> select(-NOFOLIO, -ASISTENCIA))
 # The mean of complete rate of each column is above 91.8 %
@@ -245,6 +260,7 @@ cues17 <- cues17 |> mutate(across(c(P_03, P_10), ~ factor_a_numerica(.)),
 cues17 <- cbind(cues17 |> select(1:2), dummy_cols(cues17 |> select(-1,-2), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
 
 # Merging the social context information with the test results and the number of crimes around the school for that year
+# I only consider schools that have information of crime
 caracteristicas_2017 <- junta_resultados_crimen(2017)
 
 # Elementary Schools Primarias 2018 --------------------------------------------------------------
@@ -274,6 +290,9 @@ cues18 <- cues18 |> rename(ASISTENCIA = EV2) |>
 # The missing number of students for the second day is 7847 of 100356 (7.8%)
 cues18 |> filter(ASISTENCIA =="NP") |> count()
 
+# Filter to only have questions that were made in every year.
+cues18 <- cues18 |> select(1:4, all_of(preguntas_todos |> pull(cues18)))
+
 # There is a problem in the labeling of some answers. 
 # Particularly, there are some ">" symbols which appears to be in the case where the student did not answer.
 # Collapsing ">" into the same level as NA
@@ -284,16 +303,17 @@ resumen_cues18 <- my_skim(cues18 |> select(-NOFOLIO, -CCT, -TURNO, -ASISTENCIA))
 
 # In 2018 SEP instead of coding with the options in the book (letters), coded with numbers
 # I change it back to letters to apply the functions made above.
-cues18 <- cues18 |> mutate(across(c(BP01:BP94), ~ numeros_a_letras(.)))
+cues18 <- cues18 |> mutate(across(c(BP03:BP77), ~ numeros_a_letras(.)))
 # Transformation of variables
 cues18 <- cues18 |> mutate(across(c(BP03, BP04), ~ factor_a_numerica(.)), # from factor to continuous
-                        across(BP35:BP40, ~ colapsa_multilevel_a_dummy(.)), # multilevel factor to two class factor, then dummy
+                        across(c(BP35, BP36, BP37, BP39, BP40), ~ colapsa_multilevel_a_dummy(.)), # multilevel factor to two class factor, then dummy
                         across(variables_a_transformar_dummy(cues18 |> select(-1,-2,-3,-4)), ~ convierte_a_dummy(.))) # change two class factors to dummy
 
 # To change multilevel factors to dummies I use fastDummies package, ignore NA, remove the original columns and sort alphabetically
 cues18 <- cbind(cues18 |> select(1:4), dummy_cols(cues18 |> select(-1,-2,-3,-4), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
 
 # Merging the social context information with the test results and the number of crimes around the school for that year
+# I only consider schools that have information of crime
 caracteristicas_2018 <- junta_resultados_crimen(2018)
 
 # Junior High Schools 2019 SECUNDARIAS 2019 --------------------------------------------------------
@@ -321,6 +341,9 @@ cues19 <- cues19 |>
 # Changing order of columns 
 cues19 <- cues19 |> select(NOFOLIO, CCT, TURNO, 2:last_col())
 
+# Filter to only have questions that were made in every year.
+cues19 <- cues19 |> select(1:3, all_of(preguntas_todos |> pull(cues19)))
+
 # Collapsing ">" into the same level as NA
 cues19 <- cues19 |> mutate(across(4:last_col(), ~ fct_collapse(.,NULL = c(">", NA))))
 
@@ -333,11 +356,12 @@ resumen_cues19 <- my_skim(cues19 |> select(-NOFOLIO, -CCT, -TURNO, -ASISTENCIA))
 cues19 <- cues19 |> mutate(across(c(R01:last_col()), ~ numeros_a_letras(.)))
 # Transformation of variables
 cues19 <- cues19 |> mutate(across(c(R01, R02), ~ factor_a_numerica(.)), # from factor to continuous
-                           across(R28:R32, ~ colapsa_multilevel_a_dummy(.)), # multilevel factor to two class factor, then dummy
+                           across(c(R28, R29, R30), ~ colapsa_multilevel_a_dummy(.)), # multilevel factor to two class factor, then dummy
                            across(variables_a_transformar_dummy(cues19 |> select(-1,-2,-3,-4)), ~ convierte_a_dummy(.))) # change two class factors to dummy
 
 # To change multilevel factors to dummies I use fastDummies package, ignore NA, remove the original columns and sort alphabetically
 cues19 <- cbind(cues19 |> select(1:4), dummy_cols(cues19 |> select(-1,-2,-3, -4), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
 
 # Merging the social context information with the test results and the number of crimes around the school for that year
+# I only consider schools that have information of crime
 caracteristicas_2019 <- junta_resultados_crimen(2019)
