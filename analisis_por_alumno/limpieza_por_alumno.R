@@ -170,7 +170,9 @@ junta_resultados_crimen <- function(year){
   }
   cuestionario |> left_join(resultados |> select(NOFOLIO:N_TURNO_BASE, NIVEL, MUNICIPIO:NOMBRE_LOC, NVL_ESP:last_col())) |>
     left_join(nuevo_panel |> filter(AÑO==internal_year) |> select(ID_UNICO, FINANCIAMIENTO, INDICE_REZ, N_PRESENTARON:last_col())) |>
-    select(NOFOLIO, ASISTENCIA, CCT:NIVEL, FINANCIAMIENTO, INDICE_REZ, MUNICIPIO:CALIF_MAT, N_PRESENTARON:MEAN_CALIF_MAT, all_of(first_question):all_of(last_question), INC_TIPO1_D250_T90H:INC_TIPO3_D1000_T10H) |>
+    select(NOFOLIO, ASISTENCIA, CCT, ID_UNICO, NOMBRE_CT, TURNO_BASE, N_TURNO_BASE, NIVEL, FINANCIAMIENTO, INDICE_REZ, MUNICIPIO, 
+           NOMBRE_MUN, LOCALIDAD, NOMBRE_LOC, NVL_ESP, NVL_MAT, PRESEN_ESP:CALIF_MAT, N_PRESENTARON, PORCENTAJE_DEL_TOTAL_ALUMNOS, 
+           MEAN_CALIF_ESP, MEAN_CALIF_MAT, all_of(first_question):all_of(last_question), INC_TIPO1_D250_T90H:INC_TIPO3_D1000_T10H) |>
     rename(MEAN_CALIF_ESP_ESCUELA = MEAN_CALIF_ESP, MEAN_CALIF_MAT_ESCUELA = MEAN_CALIF_MAT, ASISTENCIA_CONTEXTO = ASISTENCIA) |>
     filter(!is.na(INC_D250_T10H))
 }
@@ -365,3 +367,8 @@ cues19 <- cbind(cues19 |> select(1:4), dummy_cols(cues19 |> select(-1,-2,-3, -4)
 # Merging the social context information with the test results and the number of crimes around the school for that year
 # I only consider schools that have information of crime
 caracteristicas_2019 <- junta_resultados_crimen(2019)
+
+# saveRDS(res16, "res16.rds")
+# saveRDS(caracteristicas_2017, "caracteristicas_2017.rds")
+# saveRDS(caracteristicas_2018, "caracteristicas_2018.rds")
+# saveRDS(caracteristicas_2019, "caracteristicas_2019.rds")
