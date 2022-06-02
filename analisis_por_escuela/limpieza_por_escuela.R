@@ -285,7 +285,7 @@ nuevo_panel <- nuevo_panel |> mutate(GRADO = fct_recode(nuevo_panel$GRADO, "3" =
 
 # There are schools (231 out of 4,587) for which I only have observations for one year.
 nuevo_panel |> group_by(ID_UNICO) |> count() |> nrow() # total of schools 4587
-nuevo_panel |> group_by(ID_UNICO) |> count() |> filter(n==1) |> nrow() # 231 school with only one year
+nuevo_panel |> group_by(ID_UNICO) |> count() |> filter(n==1) |> nrow() # 231 schools with only one year of info.
 
 # For the construction of the panel I will leave the latter out because I need at least two observations for each school
 escuelas_n1 <- nuevo_panel |> group_by(ID_UNICO) |> count() |> filter(n==1) |> pull(ID_UNICO) # id of schools with obs for only one year
@@ -297,6 +297,7 @@ tabyl(nuevo_panel |> group_by(ID_UNICO) |> count() |> pull(n))
 
 # As noted above, some schools were in the grades databases but not in the crime database, 
 # (i.e. those schools were not part of a SEP database that I used before to extract manually the coordinates)
+# Many of these schools are for adults, others are part of a different federal program and are not related to the CDMX education system.
 # Looking closer to the number of NA's, it seems to be a minor problem
 nuevo_panel |>  filter(is.na(CASO)) |> nrow() #256 observations (of 10,002 entries)
 nuevo_panel |>  filter(is.na(CASO)) |> group_by(ID_UNICO) |> count() |> nrow() # comprising 104 schools (of 4,356 useful for the problem)
