@@ -217,6 +217,12 @@ res16 <- res16 |> filter(ID_UNICO %in% escuela_con_crimen(2016))
 
 # In year 2016, SEP did not make the Social Context questionnaire 
 
+# Merging only the results of the test with the number of crime around the school
+caracteristicas2016 <- res16 |> left_join(nuevo_panel |> filter(AÑO == 2016) |> select(ID_UNICO, FINANCIAMIENTO, INDICE_REZ, N_PRESENTARON:last_col())) |>
+  select(NOFOLIO:N_TURNO_BASE, NIVEL, FINANCIAMIENTO, INDICE_REZ, MUNICIPIO:NOMBRE_LOC, NVL_ESP:CALIF_MAT, 
+       N_PRESENTARON:MEAN_CALIF_MAT, INC_TIPO1_D250_T90H:INC_TIPO3_D1000_T10H) |> 
+  rename(MEAN_CALIF_ESP_ESCUELA = MEAN_CALIF_ESP, MEAN_CALIF_MAT_ESCUELA = MEAN_CALIF_MAT)
+
 # Junior High Schools 2017 SECUNDARIAS 2017 --------------------------------------------------------
 # Grades Database (Planea Results)
 res17 <- read.dbf("/Users/carloslopezdelacerda/Documents/tesis_eco_aplicada/solic_itam_2017/alumnosPB17.DBF") |>
@@ -368,7 +374,7 @@ cues19 <- cbind(cues19 |> select(1:4), dummy_cols(cues19 |> select(-1,-2,-3, -4)
 # I only consider schools that have information of crime
 caracteristicas_2019 <- junta_resultados_crimen(2019)
 
-# saveRDS(res16, "res16.rds")
+# saveRDS(caracteristicas2016, "caracteristicas_2016.rds")
 # saveRDS(caracteristicas_2017, "caracteristicas_2017.rds")
 # saveRDS(caracteristicas_2018, "caracteristicas_2018.rds")
 # saveRDS(caracteristicas_2019, "caracteristicas_2019.rds")
