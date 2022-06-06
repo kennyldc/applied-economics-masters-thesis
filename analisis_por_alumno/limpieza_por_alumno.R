@@ -138,6 +138,70 @@ numeros_a_letras <- function(x){
   fct_collapse(x , A = "1", B = "2", C = "3", D = "4", E = "5", "F" = "6", G = "7", H = "8", I = "9")
 }
 
+#### Functions for alternative analysis with academic section ---------
+pregunta_preescolar <- function(cuestionario_year){
+  preguntas_todos |> filter(pregunta == "Años de preescolar") |> pull({{cuestionario_year}})
+}
+
+pregunta_nivel_a_estudiar <- function(cuestionario_year){
+  preguntas_todos |> filter(pregunta == "¿Hasta qué nivel cree estudiar?") |> pull({{cuestionario_year}})
+}
+
+escolaridad_a_estudiar <- function(x){
+  as.numeric(case_when(x == "A" ~ 9,
+                       x == "B" ~ 12,
+                       x == "C" ~ 16,
+                       x == "D" ~ 18,
+                       TRUE ~ NA_real_))
+}
+
+preguntas_frecuencia <- function(cuestionario_year){
+  preguntas_todos |> filter(str_detect(pregunta, "Frecuencia")) |> pull({{cuestionario_year}})
+}
+
+frecuencia_si_no <- function(x){
+  x <- fct_collapse(x ,"1" = c("D", "C"), "0" = c("A", "B"))
+  x <- as.numeric(levels(x))[x]
+}
+
+junta_resultados_crimen_aternativo <- function(year){
+  if(year==2017){
+    cuestionario <- alternative_cues17
+    resultados <- res17
+    internal_year <- 2017
+    first_question <- deparse(substitute(P_03)) # the first column that corresponds to a question in the database
+    last_question <- deparse(substitute(P_77)) # the last column that corresponds to a question
+  }
+  else{
+    if(year==2018){
+      cuestionario <- alternative_cues18
+      resultados <- res18
+      internal_year <- 2018
+      first_question <- deparse(substitute(BP03))
+      last_question <- deparse(substitute(BP77))
+    }
+    else{
+      if(year==2019){
+        cuestionario <- alternative_cues19
+        resultados <- res19
+        internal_year <- 2019
+        first_question <- deparse(substitute(R01))
+        last_question <- deparse(substitute(R58))
+      }
+      else{stop("Este año no está incluido en las base")}
+    }
+  }
+  cuestionario |> left_join(resultados |> select(NOFOLIO:N_TURNO_BASE, NIVEL, MUNICIPIO:NOMBRE_LOC, NVL_ESP:last_col())) |>
+    left_join(nuevo_panel |> filter(AÑO==internal_year) |> select(ID_UNICO, FINANCIAMIENTO, INDICE_REZ, N_PRESENTARON:last_col())) |>
+    select(NOFOLIO, ASISTENCIA, CCT, ID_UNICO, NOMBRE_CT, TURNO_BASE, N_TURNO_BASE, NIVEL, FINANCIAMIENTO, INDICE_REZ, MUNICIPIO, 
+           NOMBRE_MUN, LOCALIDAD, NOMBRE_LOC, NVL_ESP, NVL_MAT, PRESEN_ESP:CALIF_MAT, N_PRESENTARON, PORCENTAJE_DEL_TOTAL_ALUMNOS, 
+           MEAN_CALIF_ESP, MEAN_CALIF_MAT, all_of(first_question):all_of(last_question), INC_TIPO1_D250_T90H:INC_TIPO3_D1000_T10H) |>
+    rename(MEAN_CALIF_ESP_ESCUELA = MEAN_CALIF_ESP, MEAN_CALIF_MAT_ESCUELA = MEAN_CALIF_MAT, ASISTENCIA_CONTEXTO = ASISTENCIA) |>
+    filter(!is.na(INC_D250_T10H))
+}
+
+########################------------------
+
 # Function to merge the social context data with the test results and the number of crimes around the schoool.
 # Because the format is basically the same for each year, I can use only one function.
 
@@ -184,7 +248,7 @@ junta_resultados_crimen <- function(year){
 # The dictionary is not intended to  make data analysis, however I will bring into R the question and the code (variable for each year)
 diccionario <- googlesheets4::read_sheet("https://docs.google.com/spreadsheets/d/1-f3QSQ8YRVnQfU0xf522z3KrRQX_POR_RS65WnoBE0g/edit?usp=sharing")
 # Getting all the questions that were made at least one year
-diccionario <- diccionario |> select(pregunta, cues17, cues18, cues19) |> remove_empty()
+diccionario <- diccionario |> select(pregunta, categoria, cues17, cues18, cues19) |> remove_empty()
 # For the sake of comparability in each year of the analysis I will only use questions that were made every year.
 preguntas_todos <- diccionario |> drop_na()
 
@@ -264,6 +328,20 @@ resumen_cues17_pres <- my_skim(cues17 |> filter(ASISTENCIA == "PRES") |> select(
 cues17 <- cues17 |> mutate(across(c(P_03, P_10), ~ factor_a_numerica(.)),
                           across(P_38:P_40, ~ colapsa_multilevel_a_dummy(.)),
                           across(variables_a_transformar_dummy(cues17 |> select(-1, -2)), ~ convierte_a_dummy(.)))
+
+###############--------------------------------
+# I will try here a secondary approach related to the questions from academic background (see dictionary)
+# In the code after this comments I split the choices of each question as a single variable. Therefore if the question has four options (let say a,b,c,d)
+# I had Question_1_A, Question_1_B, Question_1_C and so on.
+# In this secondary approach I will manually split the questions related to academic background in order to gain interpretabilty of each variable
+alternative_cues17 <- cues17 |> mutate(across(pregunta_preescolar(cues17), ~ colapsa_multilevel_a_dummy(.)),
+                                       across(pregunta_nivel_a_estudiar(cues17), ~ escolaridad_a_estudiar(.)),
+                                       across(preguntas_frecuencia(cues17), ~ frecuencia_si_no(.)))
+alternative_cues17 <- cbind(alternative_cues17 |> select(1:2), dummy_cols(alternative_cues17 |> select(-1,-2), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
+alternative_caracteristicas_2017 <- junta_resultados_crimen_aternativo(2017)
+#saveRDS(alternative_caracteristicas_2017, "alternative_caracteristicas_2017.rds")
+###############----------------------------------
+
 # To change multilevel factors to dummies I use fastDummies package, ignore NA, remove the original columns and sort alphabetically
 cues17 <- cbind(cues17 |> select(1:2), dummy_cols(cues17 |> select(-1,-2), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
 
@@ -317,6 +395,17 @@ cues18 <- cues18 |> mutate(across(c(BP03, BP04), ~ factor_a_numerica(.)), # from
                         across(c(BP35, BP36, BP37, BP39, BP40), ~ colapsa_multilevel_a_dummy(.)), # multilevel factor to two class factor, then dummy
                         across(variables_a_transformar_dummy(cues18 |> select(-1,-2,-3,-4)), ~ convierte_a_dummy(.))) # change two class factors to dummy
 
+###############--------------------------------
+# I will try here a secondary approach related to the questions from academic background (see dictionary)
+# In this secondary approach I will manually split the questions related to academic background in order to gain interpretabilty of each variable
+alternative_cues18 <- cues18 |> mutate(across(pregunta_preescolar(cues18), ~ colapsa_multilevel_a_dummy(.)),
+                                       across(pregunta_nivel_a_estudiar(cues18), ~ escolaridad_a_estudiar(.)),
+                                       across(preguntas_frecuencia(cues18), ~ frecuencia_si_no(.)))
+alternative_cues18 <- cbind(alternative_cues18 |> select(1:4), dummy_cols(alternative_cues18 |> select(-1,-2,-3,-4), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
+alternative_caracteristicas_2018 <- junta_resultados_crimen_aternativo(2018)
+#saveRDS(alternative_caracteristicas_2018, "alternative_caracteristicas_2018.rds")
+###############----------------------------------
+
 # To change multilevel factors to dummies I use fastDummies package, ignore NA, remove the original columns and sort alphabetically
 cues18 <- cbind(cues18 |> select(1:4), dummy_cols(cues18 |> select(-1,-2,-3,-4), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
 
@@ -366,6 +455,17 @@ cues19 <- cues19 |> mutate(across(c(R01:last_col()), ~ numeros_a_letras(.)))
 cues19 <- cues19 |> mutate(across(c(R01, R02), ~ factor_a_numerica(.)), # from factor to continuous
                            across(c(R28, R29, R30), ~ colapsa_multilevel_a_dummy(.)), # multilevel factor to two class factor, then dummy
                            across(variables_a_transformar_dummy(cues19 |> select(-1,-2,-3,-4)), ~ convierte_a_dummy(.))) # change two class factors to dummy
+
+###############--------------------------------
+# I will try here a secondary approach related to the questions from academic background (see dictionary)
+# In this secondary approach I will manually split the questions related to academic background in order to gain interpretabilty of each variable
+alternative_cues19 <- cues19 |> mutate(across(pregunta_preescolar(cues19), ~ colapsa_multilevel_a_dummy(.)),
+                                       across(pregunta_nivel_a_estudiar(cues19), ~ escolaridad_a_estudiar(.)),
+                                       across(preguntas_frecuencia(cues19), ~ frecuencia_si_no(.)))
+alternative_cues19 <- cbind(alternative_cues19 |> select(1:4), dummy_cols(alternative_cues19 |> select(-1,-2,-3,-4), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
+alternative_caracteristicas_2019 <- junta_resultados_crimen_aternativo(2019)
+#saveRDS(alternative_caracteristicas_2019, "alternative_caracteristicas_2019.rds")
+###############----------------------------------
 
 # To change multilevel factors to dummies I use fastDummies package, ignore NA, remove the original columns and sort alphabetically
 cues19 <- cbind(cues19 |> select(1:4), dummy_cols(cues19 |> select(-1,-2,-3, -4), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
