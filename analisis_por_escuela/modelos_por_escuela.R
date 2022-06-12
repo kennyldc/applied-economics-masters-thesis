@@ -14,6 +14,14 @@ nuevo_panel <- read.csv(sprintf("https://docs.google.com/uc?id=%s&export=downloa
 nuevo_panel <- nuevo_panel |>
   mutate(across(c(TURNO_BASE, N_TURNO_BASE, GRADO, NIVEL, FINANCIAMIENTO), as.factor))
 
+# Following Angrist and Pischke (2014), the dependent variable is standarized. 
+# Therefore, "scores are measured in units defined by the standard deviation of the reference population".
+# In this case, reference populations are elementary schools and junior high schools, respectively.
+nuevo_panel <- nuevo_panel |> 
+  group_by(NIVEL) |>
+  mutate(MEAN_CALIF_ESP = scale(MEAN_CALIF_ESP, scale = TRUE),
+         MEAN_CALIF_MAT = scale(MEAN_CALIF_MAT, scale = TRUE))
+
 # In this panel I have information of 4252 schools: 5920 elementary, 3826 junior high
 # each school has at least observations for 2 years.
 
