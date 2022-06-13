@@ -14,20 +14,12 @@ nuevo_panel <- read.csv(sprintf("https://docs.google.com/uc?id=%s&export=downloa
 nuevo_panel <- nuevo_panel |>
   mutate(across(c(TURNO_BASE, N_TURNO_BASE, GRADO, NIVEL, FINANCIAMIENTO), as.factor))
 
-# Following Angrist and Pischke (2014), the dependent variable is standarized. 
-# Therefore, "scores are measured in units defined by the standard deviation of the reference population".
-# In this case, reference populations are elementary schools and junior high schools, respectively.
-nuevo_panel <- nuevo_panel |> 
-  group_by(NIVEL) |>
-  mutate(MEAN_CALIF_ESP = scale(MEAN_CALIF_ESP, scale = TRUE),
-         MEAN_CALIF_MAT = scale(MEAN_CALIF_MAT, scale = TRUE))
-
 # In this panel I have information of 4252 schools: 5920 elementary, 3826 junior high
 # each school has at least observations for 2 years.
 
 # These are examples of the fixed effects regressions that I'm running.
 # The fixed effects variables are the school ID and the year. Errors are clustered by schools.
-# felyc_tipo1_d250_t90 <- felm(MEAN_CALIF_ESP ~ INC_TIPO1_D500_T90H | ID_UNICO + AÑO | 0 | ID_UNICO, data=nuevo_panel |> filter(NIVEL == "PRIMARIA"), weights = NULL)
+#felyc_tipo1_d250_t90 <- felm(MEAN_CALIF_ESP ~ INC_TIPO1_D500_T90H | ID_UNICO + AÑO | 0 | ID_UNICO, data=nuevo_panel |> filter(NIVEL == "PRIMARIA"), weights = NULL)
 # felyc_tipo1_d250_t90_w1 <- felm(MEAN_CALIF_ESP ~ INC_TIPO1_D500_T90H | ID_UNICO + AÑO | 0 | ID_UNICO, data=nuevo_panel |> filter(NIVEL == "PRIMARIA"), weights = nuevo_panel |> filter(NIVEL == "PRIMARIA") |> pull(PORCENTAJE_DEL_TOTAL_ALUMNOS))
 # felyc_tipo1_d250_t90_inter <- felm(MEAN_CALIF_ESP ~ INC_TIPO1_D500_T90H * FINANCIAMIENTO | ID_UNICO + AÑO | 0 | ID_UNICO, data=nuevo_panel |> filter(NIVEL == "PRIMARIA"), weights = NULL)
 # felyc_tipo1_d250_t90_w1_inter <- felm(MEAN_CALIF_ESP ~ INC_TIPO1_D500_T90H * FINANCIAMIENTO | ID_UNICO + AÑO | 0 | ID_UNICO, data=nuevo_panel |> filter(NIVEL == "PRIMARIA"), weights = nuevo_panel |> filter(NIVEL == "PRIMARIA") |> pull(PORCENTAJE_DEL_TOTAL_ALUMNOS))
