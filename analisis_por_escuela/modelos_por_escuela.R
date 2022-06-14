@@ -54,6 +54,16 @@ reg_felm <-  function(seccion_examen, tipo_delito, datos, nivel, pesos){
                             dias = case_when(grepl("T10", especificacion) ~ "10",
                                              grepl("T29", especificacion) ~ "29",
                                              TRUE ~ "90"))
+  tabla <- tabla |> mutate(across(where(is.numeric), ~ round(., digits = 4)),
+                           across(`Pr(>|t|)`, ~ round(., digits = 3)),
+                           astericos = case_when(`Pr(>|t|)` <= 0.01 ~ "***",
+                                                (`Pr(>|t|)` > 0.01 & `Pr(>|t|)` <= 0.05) ~ "**",
+                                                (`Pr(>|t|)` > 0.05 & `Pr(>|t|)` <= 0.1) ~ "*",
+                                                TRUE ~ ""), .after = Estimate)
+  tabla <- tabla |> mutate(distancia = as.numeric(distancia),
+                           dias = as.numeric(dias))
+  tabla <- tabla |> select(-`t value`,-`Cluster s.e.`)
+  tabla <- tabla |> filter(!is.nan(Estimate))
   tabla <- tabla |> select(especificacion, grado, termino, delito:last_col(), Estimate:adj_r_squared)
   return(tabla)
 }
@@ -82,9 +92,9 @@ terminos_coef_posibles <- list(incidentes = combinaciones_incidentes,
 # I follow the common practice to add a value of 1 in order to make the log-log transformation.
 # I decide to make the transformation OUTSIDE the regression specification in order to use the function made above
 # Note that I add a constant value this might or might not be problematic with certain assumptions
-constante <- 0.001
-nuevo_panel_log_log <- nuevo_panel
-nuevo_panel_log_log[17:54] <- log(nuevo_panel_log_log[17:54]+constante)
+# constante <- 0.001
+# nuevo_panel_log_log <- nuevo_panel
+# nuevo_panel_log_log[17:54] <- log(nuevo_panel_log_log[17:54]+constante)
 
 # Wrapping estimations inside a function.
 # The following function allows to select the section, student level (elementary or junior high school), and either to include weights 
@@ -114,8 +124,8 @@ estimaciones_primarias_esp <- list(estimaciones_sin_pesos = resumen_estimaciones
 # Because the interpretation of the coefficient estimates is more or less difficult AND because the number of crimes are close to 0,
 # I decide to run the same regressions but making a log transformation for both y and x 
 
-estimaciones_primarias_esp_log_log <- list(estimaciones_sin_pesos = resumen_estimaciones("MEAN_CALIF_ESP", nuevo_panel_log_log, "PRIMARIA", NULL),
-                                           estimaciones_con_pesos = resumen_estimaciones("MEAN_CALIF_ESP", nuevo_panel_log_log, "PRIMARIA", "YES"))
+# estimaciones_primarias_esp_log_log <- list(estimaciones_sin_pesos = resumen_estimaciones("MEAN_CALIF_ESP", nuevo_panel_log_log, "PRIMARIA", NULL),
+#                                            estimaciones_con_pesos = resumen_estimaciones("MEAN_CALIF_ESP", nuevo_panel_log_log, "PRIMARIA", "YES"))
 
 # MEAN_CALIF_MAT The effect of crime in the Math Test for elementary schools
 # levels
@@ -125,8 +135,8 @@ estimaciones_primarias_mat <- list(estimaciones_sin_pesos = resumen_estimaciones
 # MEAN_CALIF_MAT LOG-LOG Transformation -----------------------------------------
 # I decide to run the same regressions but making a log transformation for both y and x 
 
-estimaciones_primarias_mat_log_log <- list(estimaciones_sin_pesos = resumen_estimaciones("MEAN_CALIF_MAT", nuevo_panel_log_log, "PRIMARIA", NULL),
-                                   estimaciones_con_pesos = resumen_estimaciones("MEAN_CALIF_MAT", nuevo_panel_log_log, "PRIMARIA", "YES"))
+# estimaciones_primarias_mat_log_log <- list(estimaciones_sin_pesos = resumen_estimaciones("MEAN_CALIF_MAT", nuevo_panel_log_log, "PRIMARIA", NULL),
+#                                    estimaciones_con_pesos = resumen_estimaciones("MEAN_CALIF_MAT", nuevo_panel_log_log, "PRIMARIA", "YES"))
 
 # Junio High School (Secundarias) ------------------------------------------
 # MEAN_CALIF_ESP - The effect of crime in the Spanish Test for junior high schools
@@ -135,8 +145,8 @@ estimaciones_secundarias_esp <- list(estimaciones_sin_pesos = resumen_estimacion
                                      estimaciones_con_pesos = resumen_estimaciones("MEAN_CALIF_ESP", nuevo_panel, "SECUNDARIA", "YES"))
 
 # log-log
-estimaciones_secundarias_esp_log_log <- list(estimaciones_sin_pesos = resumen_estimaciones("MEAN_CALIF_ESP", nuevo_panel_log_log, "SECUNDARIA", NULL),
-                                    estimaciones_con_pesos = resumen_estimaciones("MEAN_CALIF_ESP", nuevo_panel_log_log, "SECUNDARIA", "YES"))
+# estimaciones_secundarias_esp_log_log <- list(estimaciones_sin_pesos = resumen_estimaciones("MEAN_CALIF_ESP", nuevo_panel_log_log, "SECUNDARIA", NULL),
+#                                     estimaciones_con_pesos = resumen_estimaciones("MEAN_CALIF_ESP", nuevo_panel_log_log, "SECUNDARIA", "YES"))
 
 # MEAN_CALIF_MAT - The effect of crime in the Math Test for junior high schools
 # Levels
@@ -144,5 +154,5 @@ estimaciones_secundarias_mat <- list(estimaciones_sin_pesos = resumen_estimacion
                                      estimaciones_con_pesos = resumen_estimaciones("MEAN_CALIF_MAT", nuevo_panel, "SECUNDARIA", "YES"))
 
 # log-log
-estimaciones_secundarias_mat_log_log <- list(estimaciones_sin_pesos = resumen_estimaciones("MEAN_CALIF_MAT", nuevo_panel_log_log, "SECUNDARIA", NULL),
-                                             estimaciones_con_pesos = resumen_estimaciones("MEAN_CALIF_MAT", nuevo_panel_log_log, "SECUNDARIA", "YES"))
+# estimaciones_secundarias_mat_log_log <- list(estimaciones_sin_pesos = resumen_estimaciones("MEAN_CALIF_MAT", nuevo_panel_log_log, "SECUNDARIA", NULL),
+#                                              estimaciones_con_pesos = resumen_estimaciones("MEAN_CALIF_MAT", nuevo_panel_log_log, "SECUNDARIA", "YES"))
