@@ -1,10 +1,12 @@
 # Script for cleaning the data for my master's thesis
-# Cleaning the data for a school level anaylisis.
+# Cleaning the data for a student level anaylisis.
 
 # check if libraries are installed, then load
 pacman::p_load(tidyverse, foreign, googlesheets4, skimr, janitor, fastDummies, tidyselect)
 
 # Util functions for cleaning the planea database ---------------------------
+
+`%notin%` <- Negate(`%in%`)
 
 # The grades databases for each year have (almost) the same format which makes the work easier and suitable for functions
 
@@ -128,7 +130,7 @@ convierte_a_dummy <- function(x){
   x <- fct_recode(x, "1" = "A", "0" = "B")
   x <- as.numeric(levels(x))[x]
 }
-# This functions collapses multilevel factor variables that should be counted as two class level and then transforms it into a dummy
+# This functions collapses multilevel factor variables that should be counted as two class level (if has certain feature or not) and then transforms it into a dummy
 colapsa_multilevel_a_dummy <- function(x){
   x <- fct_collapse(x ,"1" = c("B", "C", "D", "E"), "0" = "A")
   x <- as.numeric(levels(x))[x]
@@ -155,8 +157,109 @@ escolaridad_a_estudiar <- function(x){
                        TRUE ~ NA_real_))
 }
 
+pregunta_variable_continua <- function(cuestionario_year){
+  preguntas_todos |> filter(pregunta == "Número de personas que viven en el hogar" | pregunta == "Número de cuartos que se usan para dormir") |> 
+    pull({{cuestionario_year}})
+}
+
+pregunta_nivel_estudios_padres <- function(cuestionario_year){
+  preguntas_todos |> filter(pregunta == "Estudios del papá" | pregunta == "Estudios de la mamá") |> 
+    pull({{cuestionario_year}})
+}
+
+dummy_estudios_universitarios <- function(x){
+  x <- fct_collapse(x ,"1" = c("G"), "0" = c("A", "B", "C", "D", "E", "F", "H", "I"))
+  x <- as.numeric(levels(x))[x]
+}
+
+pregunta_tiempo_actividades_no_escolares <- function(cuestionario_year){
+  preguntas_todos |> filter(pregunta == "Tiempo a los quehaceres familiares" |
+                              pregunta == "Tiempo de ayuda a familiares en trabajo o negocio" |
+                              pregunta == "Tiempo a trabajo (no familia)") |> 
+    pull({{cuestionario_year}})
+}
+
+actividades_no_escolares_continua <- function(x){
+  as.numeric(case_when(x == "A" ~ 0,
+                       x == "B" ~ 1,
+                       x == "C" ~ 3,
+                       x == "D" ~ 5,
+                       x == "E" ~ 7,
+                       TRUE ~ NA_real_))
+}
+
+pregunta_focos <- function(cuestionario_year){
+  preguntas_todos |> filter(pregunta == "Número de focos") |> pull({{cuestionario_year}})
+}
+
+focos_continua <- function(x){
+  as.numeric(case_when(x == "A" ~ 0,
+                       x == "B" ~ 5,
+                       x == "C" ~ 10,
+                       x == "D" ~ 15,
+                       x == "E" ~ 20,
+                       TRUE ~ NA_real_))
+}
+
+pregunta_fuente_cocinar <- function(cuestionario_year){
+  preguntas_todos |> filter(pregunta == "¿Qué utilizan para cocinar?") |> pull({{cuestionario_year}})
+}
+
+dummy_fuente_cocina <- function(x){
+  x <- fct_collapse(x ,"1" = c("A", "B"), "0" = c("C", "D"))
+  x <- as.numeric(levels(x))[x]
+}
+
+pregunta_libros <- function(cuestionario_year){
+  preguntas_todos |> filter(pregunta == "¿Cuántos libros además de los escolares?") |> pull({{cuestionario_year}})
+}
+
+libros_continua <- function(x){
+  as.numeric(case_when(x == "A" ~ 0,
+                       x == "B" ~ 25,
+                       x == "C" ~ 50,
+                       x == "D" ~ 100,
+                       x == "E" ~ 150,
+                       TRUE ~ NA_real_))
+}
+
+pregunta_libros_leidos <- function(cuestionario_year){
+  preguntas_todos |> filter(pregunta == "¿Cuántos libros a leído en los últimos 10 meses?") |> pull({{cuestionario_year}})
+}
+
+libros_leidos_continua <- function(x){
+  as.numeric(case_when(x == "A" ~ 0,
+                       x == "B" ~ 2,
+                       x == "C" ~ 4,
+                       x == "D" ~ 6,
+                       TRUE ~ NA_real_))
+}
+
+pregunta_uso_internet <- function(cuestionario_year){
+  preguntas_todos |> filter(pregunta == "¿Qué tan seguido usa Internet para tareas?") |> pull({{cuestionario_year}})
+}
+
+dummy_uso_internet <- function(x){
+  x <- fct_collapse(x ,"1" = c("A", "B", "C"), "0" = c("D"))
+  x <- as.numeric(levels(x))[x]
+}
+
+preguntas_cambio_sentido <- function(cuestionario_year){
+  preguntas_todos |> filter(pregunta == "Frecuencia con que olvida hacer la tarea" | 
+                              pregunta == "Frecuencia con que le desagrada hacer tarea") |> pull({{cuestionario_year}})
+}
+
+frecuencia_cambio_sentido <- function(x){
+  x <- fct_collapse(x ,"1" = c("A", "B"), "0" = c("C", "D"))
+  x <- as.numeric(levels(x))[x]
+}
+
 preguntas_frecuencia <- function(cuestionario_year){
-  preguntas_todos |> filter(str_detect(pregunta, "Frecuencia")) |> pull({{cuestionario_year}})
+  vector <- preguntas_todos |> filter(str_detect(pregunta, "Frecuencia")) |> pull({{cuestionario_year}})
+  vector_cambio_sentido <- preguntas_todos |> filter(pregunta == "Frecuencia con que olvida hacer la tarea" | 
+                                                       pregunta == "Frecuencia con que le desagrada hacer tarea") |> pull({{cuestionario_year}})
+  vector <- vector [! vector %in% vector_cambio_sentido]
+  return(vector)
 }
 
 frecuencia_si_no <- function(x){
@@ -164,9 +267,16 @@ frecuencia_si_no <- function(x){
   x <- as.numeric(levels(x))[x]
 }
 
-junta_resultados_crimen_aternativo <- function(year){
+preguntas_frecuencia_maestros <- function(cuestionario_year){
+  preguntas_todos |> filter(str_detect(pregunta, "Frecuencia maestros")) |> pull({{cuestionario_year}})
+}
+
+# Function to merge the social context data with the test results and the number of crimes around the schoool.
+# Because the format is basically the same for each year, I can use only one function.
+
+junta_resultados_crimen<- function(year){
   if(year==2017){
-    cuestionario <- alternative_cues17
+    cuestionario <- cues17
     resultados <- res17
     internal_year <- 2017
     first_question <- deparse(substitute(P_03)) # the first column that corresponds to a question in the database
@@ -174,7 +284,7 @@ junta_resultados_crimen_aternativo <- function(year){
   }
   else{
     if(year==2018){
-      cuestionario <- alternative_cues18
+      cuestionario <- cues18
       resultados <- res18
       internal_year <- 2018
       first_question <- deparse(substitute(BP03))
@@ -182,52 +292,11 @@ junta_resultados_crimen_aternativo <- function(year){
     }
     else{
       if(year==2019){
-        cuestionario <- alternative_cues19
-        resultados <- res19
-        internal_year <- 2019
-        first_question <- deparse(substitute(R01))
-        last_question <- deparse(substitute(R58))
-      }
-      else{stop("Este año no está incluido en las base")}
-    }
-  }
-  cuestionario |> left_join(resultados |> select(NOFOLIO:N_TURNO_BASE, NIVEL, MUNICIPIO:NOMBRE_LOC, NVL_ESP:last_col())) |>
-    left_join(nuevo_panel |> filter(AÑO==internal_year) |> select(ID_UNICO, FINANCIAMIENTO, INDICE_REZ, N_PRESENTARON:last_col())) |>
-    select(NOFOLIO, ASISTENCIA, CCT, ID_UNICO, NOMBRE_CT, TURNO_BASE, N_TURNO_BASE, NIVEL, FINANCIAMIENTO, INDICE_REZ, MUNICIPIO, 
-           NOMBRE_MUN, LOCALIDAD, NOMBRE_LOC, NVL_ESP, NVL_MAT, PRESEN_ESP:CALIF_MAT, N_PRESENTARON, PORCENTAJE_DEL_TOTAL_ALUMNOS, 
-           MEAN_CALIF_ESP, MEAN_CALIF_MAT, all_of(first_question):all_of(last_question), INC_TIPO1_D250_T90H:INC_TIPO3_D1000_T10H) |>
-    rename(MEAN_CALIF_ESP_ESCUELA = MEAN_CALIF_ESP, MEAN_CALIF_MAT_ESCUELA = MEAN_CALIF_MAT, ASISTENCIA_CONTEXTO = ASISTENCIA) |>
-    filter(!is.na(INC_D250_T10H))
-}
-
-########################------------------
-
-# Function to merge the social context data with the test results and the number of crimes around the schoool.
-# Because the format is basically the same for each year, I can use only one function.
-
-junta_resultados_crimen <- function(year){
-  if(year==2017){
-    cuestionario <- cues17
-    resultados <- res17
-    internal_year <- 2017
-    first_question <- deparse(substitute(P_03)) # the first column that corresponds to a question in the database
-    last_question <- deparse(substitute(P_77_D)) # the last column that corresponds to a question
-  }
-  else{
-    if(year==2018){
-      cuestionario <- cues18
-      resultados <- res18
-      internal_year <- 2018
-      first_question <- deparse(substitute(BP03))
-      last_question <- deparse(substitute(BP77_D))
-    }
-    else{
-      if(year==2019){
         cuestionario <- cues19
         resultados <- res19
         internal_year <- 2019
         first_question <- deparse(substitute(R01))
-        last_question <- deparse(substitute(R58_D))
+        last_question <- deparse(substitute(R58))
       }
       else{stop("Este año no está incluido en las base")}
     }
@@ -251,6 +320,10 @@ diccionario <- googlesheets4::read_sheet("https://docs.google.com/spreadsheets/d
 diccionario <- diccionario |> select(pregunta, categoria, cues17, cues18, cues19) |> remove_empty()
 # For the sake of comparability in each year of the analysis I will only use questions that were made every year.
 preguntas_todos <- diccionario |> drop_na()
+# The following questions are cancelled from the analysis because are poorly designed
+preguntas_todos <- preguntas_todos |> filter((pregunta != "¿En la escuela le dan clases en la lengua indígena?") & 
+                                               (pregunta != "Frecuencia falta tiempo para terminar tarea") &
+                                               (pregunta != "Frecuencia con que se distrae haciendo tarea"))
 
 # Reading the panel with information of crimes committed around each school in CDMX from 2016 to 2019  --------------------------------------------------------
 # Reading the file from Google Drive
@@ -321,29 +394,29 @@ resumen_cues17 <- my_skim(cues17 |> select(-NOFOLIO, -ASISTENCIA))
 resumen_cues17_pres <- my_skim(cues17 |> filter(ASISTENCIA == "PRES") |> select(-NOFOLIO, -ASISTENCIA))
 
 # After making the dictionary (see line 126) I realized that the following variables need some adjustments:
-# Variables P_03 and P_10 were labelled as multilevel factor but in reality it is better understand them as continuous variables
-# Also, I collapsed P_38 to P_40 to code the variable as a dummy (whether it has a certain good or not)
-# And finally "variables_a_transformar_dummy" (see above) finds which columns where labeled as "A" (yes) and "B" (no).
-# I convert those into a dummy (1 if it has the feature, 0 in any other case)
-cues17 <- cues17 |> mutate(across(c(P_03, P_10), ~ factor_a_numerica(.)),
+cues17 <- cues17 |> mutate(across(pregunta_variable_continua(cues17), ~ factor_a_numerica(.)),
                           across(P_38:P_40, ~ colapsa_multilevel_a_dummy(.)),
-                          across(variables_a_transformar_dummy(cues17 |> select(-1, -2)), ~ convierte_a_dummy(.)))
+                          across(variables_a_transformar_dummy(cues17 |> select(-1, -2)), ~ convierte_a_dummy(.)),
+                          across(pregunta_preescolar(cues17), ~ colapsa_multilevel_a_dummy(.)),
+                          across(pregunta_nivel_a_estudiar(cues17), ~ escolaridad_a_estudiar(.)),
+                          across(pregunta_nivel_estudios_padres(cues17), ~ dummy_estudios_universitarios(.)),
+                          across(pregunta_tiempo_actividades_no_escolares(cues17), ~ actividades_no_escolares_continua(.)),
+                          across(pregunta_focos(cues17), ~ focos_continua(.)),
+                          across(pregunta_fuente_cocinar(cues17), ~ dummy_fuente_cocina(.)),
+                          across(pregunta_libros(cues17), ~ libros_continua(.)),
+                          across(pregunta_libros_leidos(cues17), ~ libros_leidos_continua(.)),
+                          across(pregunta_uso_internet(cues17), ~ dummy_uso_internet(.)),
+                          across(preguntas_cambio_sentido(cues17), ~ frecuencia_cambio_sentido(.)),
+                          across(preguntas_frecuencia(cues17), ~ frecuencia_si_no(.)))
 
-###############--------------------------------
-# I will try here a secondary approach related to the questions from academic background (see dictionary)
-# In the code after this comments I split the choices of each question as a single variable. Therefore if the question has four options (let say a,b,c,d)
-# I had Question_1_A, Question_1_B, Question_1_C and so on.
-# In this secondary approach I will manually split the questions related to academic background in order to gain interpretabilty of each variable
-alternative_cues17 <- cues17 |> mutate(across(pregunta_preescolar(cues17), ~ colapsa_multilevel_a_dummy(.)),
-                                       across(pregunta_nivel_a_estudiar(cues17), ~ escolaridad_a_estudiar(.)),
-                                       across(preguntas_frecuencia(cues17), ~ frecuencia_si_no(.)))
-alternative_cues17 <- cbind(alternative_cues17 |> select(1:2), dummy_cols(alternative_cues17 |> select(-1,-2), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
-alternative_caracteristicas_2017 <- junta_resultados_crimen_aternativo(2017)
-#saveRDS(alternative_caracteristicas_2017, "alternative_caracteristicas_2017.rds")
-###############----------------------------------
-
-# To change multilevel factors to dummies I use fastDummies package, ignore NA, remove the original columns and sort alphabetically
-cues17 <- cbind(cues17 |> select(1:2), dummy_cols(cues17 |> select(-1,-2), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
+# p_uno_tiene_universitarios <- function(x){
+#   case_when(preguntas_todos |> 
+#               filter(pregunta == "Estudios del papá") |> 
+#               pull({{cuestionario_year}}) == "1" | preguntas_todos |> 
+#               filter(pregunta == "Estudios del papá") |> 
+#               pull({{cuestionario_year}}) == "1" |> pull({{cuestionario_year}}) == "1" ~ 1, 
+#             TRUE ~ 0)
+#   } ## jala??
 
 # Merging the social context information with the test results and the number of crimes around the school for that year
 # I only consider schools that have information of crime
@@ -391,23 +464,20 @@ resumen_cues18 <- my_skim(cues18 |> select(-NOFOLIO, -CCT, -TURNO, -ASISTENCIA))
 # I change it back to letters to apply the functions made above.
 cues18 <- cues18 |> mutate(across(c(BP03:BP77), ~ numeros_a_letras(.)))
 # Transformation of variables
-cues18 <- cues18 |> mutate(across(c(BP03, BP04), ~ factor_a_numerica(.)), # from factor to continuous
-                        across(c(BP35, BP36, BP37, BP39, BP40), ~ colapsa_multilevel_a_dummy(.)), # multilevel factor to two class factor, then dummy
-                        across(variables_a_transformar_dummy(cues18 |> select(-1,-2,-3,-4)), ~ convierte_a_dummy(.))) # change two class factors to dummy
-
-###############--------------------------------
-# I will try here a secondary approach related to the questions from academic background (see dictionary)
-# In this secondary approach I will manually split the questions related to academic background in order to gain interpretabilty of each variable
-alternative_cues18 <- cues18 |> mutate(across(pregunta_preescolar(cues18), ~ colapsa_multilevel_a_dummy(.)),
-                                       across(pregunta_nivel_a_estudiar(cues18), ~ escolaridad_a_estudiar(.)),
-                                       across(preguntas_frecuencia(cues18), ~ frecuencia_si_no(.)))
-alternative_cues18 <- cbind(alternative_cues18 |> select(1:4), dummy_cols(alternative_cues18 |> select(-1,-2,-3,-4), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
-alternative_caracteristicas_2018 <- junta_resultados_crimen_aternativo(2018)
-#saveRDS(alternative_caracteristicas_2018, "alternative_caracteristicas_2018.rds")
-###############----------------------------------
-
-# To change multilevel factors to dummies I use fastDummies package, ignore NA, remove the original columns and sort alphabetically
-cues18 <- cbind(cues18 |> select(1:4), dummy_cols(cues18 |> select(-1,-2,-3,-4), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
+cues18 <- cues18 |> mutate(across(pregunta_variable_continua(cues18), ~ factor_a_numerica(.)),
+                           across(c(BP35, BP36, BP37, BP39, BP40), ~ colapsa_multilevel_a_dummy(.)),
+                           across(variables_a_transformar_dummy(cues18 |> select(-1, -2, -3, -4)), ~ convierte_a_dummy(.)),
+                           across(pregunta_preescolar(cues18), ~ colapsa_multilevel_a_dummy(.)),
+                           across(pregunta_nivel_a_estudiar(cues18), ~ escolaridad_a_estudiar(.)),
+                           across(pregunta_nivel_estudios_padres(cues18), ~ dummy_estudios_universitarios(.)),
+                           across(pregunta_tiempo_actividades_no_escolares(cues18), ~ actividades_no_escolares_continua(.)),
+                           across(pregunta_focos(cues18), ~ focos_continua(.)),
+                           across(pregunta_fuente_cocinar(cues18), ~ dummy_fuente_cocina(.)),
+                           across(pregunta_libros(cues18), ~ libros_continua(.)),
+                           across(pregunta_libros_leidos(cues18), ~ libros_leidos_continua(.)),
+                           across(pregunta_uso_internet(cues18), ~ dummy_uso_internet(.)),
+                           across(preguntas_cambio_sentido(cues18), ~ frecuencia_cambio_sentido(.)),
+                           across(preguntas_frecuencia(cues18), ~ frecuencia_si_no(.)))
 
 # Merging the social context information with the test results and the number of crimes around the school for that year
 # I only consider schools that have information of crime
@@ -421,8 +491,8 @@ res19 <- read.dbf("/Users/carloslopezdelacerda/Documents/tesis_eco_aplicada/soli
 # This year the indicator variable used to signal that a student did not took the test (spanish and math) was coded differently (S and N)
 # Fixing that variable to keep format from previous years
 res19 <- res19 |>
-  mutate(PRESEN_ESP = if_else(PRESEN_ESP == "S", 1,0),
-         PRESEN_MAT = if_else(PRESEN_MAT == "S", 1,0))
+  mutate(PRESEN_ESP = as.factor(if_else(PRESEN_ESP == "S", 1,0)),
+         PRESEN_MAT = as.factor(if_else(PRESEN_MAT == "S", 1,0)))
 
 # cleaning the database (see functions above)
 res19 <- limpia(res19)
@@ -451,30 +521,116 @@ resumen_cues19 <- my_skim(cues19 |> select(-NOFOLIO, -CCT, -TURNO, -ASISTENCIA))
 
 # Changing it back answers coded as numbers to letters in order to apply the functions made above.
 cues19 <- cues19 |> mutate(across(c(R01:last_col()), ~ numeros_a_letras(.)))
+
 # Transformation of variables
-cues19 <- cues19 |> mutate(across(c(R01, R02), ~ factor_a_numerica(.)), # from factor to continuous
-                           across(c(R28, R29, R30), ~ colapsa_multilevel_a_dummy(.)), # multilevel factor to two class factor, then dummy
-                           across(variables_a_transformar_dummy(cues19 |> select(-1,-2,-3,-4)), ~ convierte_a_dummy(.))) # change two class factors to dummy
-
-###############--------------------------------
-# I will try here a secondary approach related to the questions from academic background (see dictionary)
-# In this secondary approach I will manually split the questions related to academic background in order to gain interpretabilty of each variable
-alternative_cues19 <- cues19 |> mutate(across(pregunta_preescolar(cues19), ~ colapsa_multilevel_a_dummy(.)),
-                                       across(pregunta_nivel_a_estudiar(cues19), ~ escolaridad_a_estudiar(.)),
-                                       across(preguntas_frecuencia(cues19), ~ frecuencia_si_no(.)))
-alternative_cues19 <- cbind(alternative_cues19 |> select(1:4), dummy_cols(alternative_cues19 |> select(-1,-2,-3,-4), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
-alternative_caracteristicas_2019 <- junta_resultados_crimen_aternativo(2019)
-#saveRDS(alternative_caracteristicas_2019, "alternative_caracteristicas_2019.rds")
-###############----------------------------------
-
-# To change multilevel factors to dummies I use fastDummies package, ignore NA, remove the original columns and sort alphabetically
-cues19 <- cbind(cues19 |> select(1:4), dummy_cols(cues19 |> select(-1,-2,-3, -4), ignore_na = TRUE, remove_selected_columns = TRUE) |> select(sort(peek_vars())))
+cues19 <- cues19 |> mutate(across(pregunta_variable_continua(cues19), ~ factor_a_numerica(.)),
+                           across(c(R28, R29, R30), ~ colapsa_multilevel_a_dummy(.)),
+                           across(variables_a_transformar_dummy(cues19 |> select(-1, -2, -3, -4)), ~ convierte_a_dummy(.)),
+                           across(pregunta_preescolar(cues19), ~ colapsa_multilevel_a_dummy(.)),
+                           across(pregunta_nivel_a_estudiar(cues19), ~ escolaridad_a_estudiar(.)),
+                           across(pregunta_nivel_estudios_padres(cues19), ~ dummy_estudios_universitarios(.)),
+                           across(pregunta_tiempo_actividades_no_escolares(cues19), ~ actividades_no_escolares_continua(.)),
+                           across(pregunta_focos(cues19), ~ focos_continua(.)),
+                           across(pregunta_fuente_cocinar(cues19), ~ dummy_fuente_cocina(.)),
+                           across(pregunta_libros(cues19), ~ libros_continua(.)),
+                           across(pregunta_libros_leidos(cues19), ~ libros_leidos_continua(.)),
+                           across(pregunta_uso_internet(cues19), ~ dummy_uso_internet(.)),
+                           across(preguntas_cambio_sentido(cues19), ~ frecuencia_cambio_sentido(.)),
+                           across(preguntas_frecuencia(cues19), ~ frecuencia_si_no(.)))
 
 # Merging the social context information with the test results and the number of crimes around the school for that year
 # I only consider schools that have information of crime
 caracteristicas_2019 <- junta_resultados_crimen(2019)
 
-# saveRDS(caracteristicas2016, "caracteristicas_2016.rds")
-# saveRDS(caracteristicas_2017, "caracteristicas_2017.rds")
+# Creating a panel with students of each year -----------------------------
+
+# Now that I have the results from the exam and the social, economic and academic characteristics of every student I will transform the data
+# into a new panel in order to check whether crime affects students at the individual level.
+# However, because in 2016 there is no social context questionnaire the main focus will be students from Junior High School level (with info in 2017 and 2019)
+
+# I will start by merging 2017 and 2019 as a single panel.
+caracteristicas_2017  <- caracteristicas_2017 |> mutate(YEAR = 2017, .after = NOMBRE_CT)
+caracteristicas_2019 <- caracteristicas_2019 |> mutate(YEAR = 2019, .after = NOMBRE_CT)
+
+# The only difference between the data is that in 2019 gender is labeled as sex and in 2017 level is in lowercase
+caracteristicas_2017 <- caracteristicas_2017 |>
+  mutate(NIVEL = fct_recode(NIVEL, "SECUNDARIA" = "secundaria"))
+
+caracteristicas_2019 <- caracteristicas_2019 |>
+  rename(GENERO = SEXO)
+
+# The name of the variables (that indicate the social questions) will be the ones from 2017, see dictionary for more information
+panel_secundarias_alumnos <- map2_df(caracteristicas_2017, caracteristicas_2019, c)
+
+# Changing some columns to factors
+panel_secundarias_alumnos <- panel_secundarias_alumnos |> 
+  mutate(across(c(ASISTENCIA_CONTEXTO, YEAR, TURNO_BASE, N_TURNO_BASE), ~ as.factor(.)))
+
+# I can only use for the panel schools that have at least two observations
+# 1257 of 1292 share this characteristic 
+
+# The 35 schools that do not have observations are removed
+escuelas_sin_dos_obs <- panel_secundarias_alumnos |> 
+  group_by(YEAR) |>
+  summarise(escuelas = unique(ID_UNICO)) |>
+  arrange(escuelas) |>
+  group_by(escuelas) |>
+  count() |>
+  filter(n==1) |> pull(escuelas)
+
+# Final panel is set to
+panel_secundarias_alumnos <- panel_secundarias_alumnos |> 
+  filter(ID_UNICO %notin% escuelas_sin_dos_obs)
+
+# For completeness, in the case of elementary schools a panel is only possible with the results
+# and no other context variable
+
+# Recall that caracts2016 has elementary and junior high students. 
+# Junior high 2016 is dropped
+
+caracteristicas_2016 <- caracteristicas_2016 |> filter(NIVEL == "primaria") |>
+  mutate(NIVEL = toupper(NIVEL))
+
+# Caracts2016 has variables not matched in caracteristicas18
+caracteristicas_2016 <- caracteristicas_2016 |> select(-COPIA)
+
+# Year column 
+caracteristicas_2016 <- caracteristicas_2016 |> mutate(YEAR = 2016, .after = NOMBRE_CT)
+
+# Setting 2018
+match_2018 <- caracteristicas_2018 |>
+  mutate(NIVEL = toupper(NIVEL)) |>
+  select(all_of(names(caracteristicas_2016)))
+
+match_2018 <- match_2018 |> mutate(YEAR = 2018, .after = NOMBRE_CT)
+
+# Panel elementary schools (only results and crime)
+panel_primarias_alumnos <- map2_df(caracteristicas_2016, match_2018, c)
+
+# Changing some columns to factors
+panel_primarias_alumnos <- panel_primarias_alumnos |> 
+  mutate(across(c(YEAR, TURNO_BASE, N_TURNO_BASE), ~ as.factor(.)))
+
+# I can only use for the panel schools that have at least two observations
+# 2856 of 2960 share this characteristic 
+
+# The 104 schools that do not have observations are removed
+escuelas_sin_dos_obs_prim <- panel_primarias_alumnos |> 
+  group_by(YEAR) |>
+  summarise(escuelas = unique(ID_UNICO)) |>
+  group_by(escuelas) |>
+  count() |>
+  filter(n==1) |> pull(escuelas)
+
+# Final panel is set to
+panel_primarias_alumnos <- panel_primarias_alumnos |> 
+  filter(ID_UNICO %notin% escuelas_sin_dos_obs_prim)
+
+# Saving the sources for the model
+# Saving panel junior high and elementary
+
+# saveRDS(panel_secundarias_alumnos, "panel_secundarias_alumnos.rds")
+# saveRDS(panel_primarias_alumnos, "panel_primarias_alumnos.rds")
+
+# Also save caracteristicas2018 that have the info from the social questionnarie for primarias
 # saveRDS(caracteristicas_2018, "caracteristicas_2018.rds")
-# saveRDS(caracteristicas_2019, "caracteristicas_2019.rds")
