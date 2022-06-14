@@ -246,7 +246,8 @@ dummy_uso_internet <- function(x){
 
 preguntas_cambio_sentido <- function(cuestionario_year){
   preguntas_todos |> filter(pregunta == "Frecuencia con que olvida hacer la tarea" | 
-                              pregunta == "Frecuencia con que le desagrada hacer tarea") |> pull({{cuestionario_year}})
+                              pregunta == "Frecuencia con que le desagrada hacer tarea" |
+                              pregunta == "Frecuencia con que se distrae haciendo tarea") |> pull({{cuestionario_year}})
 }
 
 frecuencia_cambio_sentido <- function(x){
@@ -257,7 +258,8 @@ frecuencia_cambio_sentido <- function(x){
 preguntas_frecuencia <- function(cuestionario_year){
   vector <- preguntas_todos |> filter(str_detect(pregunta, "Frecuencia")) |> pull({{cuestionario_year}})
   vector_cambio_sentido <- preguntas_todos |> filter(pregunta == "Frecuencia con que olvida hacer la tarea" | 
-                                                       pregunta == "Frecuencia con que le desagrada hacer tarea") |> pull({{cuestionario_year}})
+                                                       pregunta == "Frecuencia con que le desagrada hacer tarea" |
+                                                       pregunta == "Frecuencia con que se distrae haciendo tarea") |> pull({{cuestionario_year}})
   vector <- vector [! vector %in% vector_cambio_sentido]
   return(vector)
 }
@@ -322,8 +324,7 @@ diccionario <- diccionario |> select(pregunta, categoria, cues17, cues18, cues19
 preguntas_todos <- diccionario |> drop_na()
 # The following questions are cancelled from the analysis because are poorly designed
 preguntas_todos <- preguntas_todos |> filter((pregunta != "¿En la escuela le dan clases en la lengua indígena?") & 
-                                               (pregunta != "Frecuencia falta tiempo para terminar tarea") &
-                                               (pregunta != "Frecuencia con que se distrae haciendo tarea"))
+                                               (pregunta != "Frecuencia falta tiempo para terminar tarea"))
 
 # Reading the panel with information of crimes committed around each school in CDMX from 2016 to 2019  --------------------------------------------------------
 # Reading the file from Google Drive
@@ -409,15 +410,6 @@ cues17 <- cues17 |> mutate(across(pregunta_variable_continua(cues17), ~ factor_a
                           across(preguntas_cambio_sentido(cues17), ~ frecuencia_cambio_sentido(.)),
                           across(preguntas_frecuencia(cues17), ~ frecuencia_si_no(.)))
 
-# p_uno_tiene_universitarios <- function(x){
-#   case_when(preguntas_todos |> 
-#               filter(pregunta == "Estudios del papá") |> 
-#               pull({{cuestionario_year}}) == "1" | preguntas_todos |> 
-#               filter(pregunta == "Estudios del papá") |> 
-#               pull({{cuestionario_year}}) == "1" |> pull({{cuestionario_year}}) == "1" ~ 1, 
-#             TRUE ~ 0)
-#   } ## jala??
-
 # Merging the social context information with the test results and the number of crimes around the school for that year
 # I only consider schools that have information of crime
 caracteristicas_2017 <- junta_resultados_crimen(2017)
@@ -482,6 +474,12 @@ cues18 <- cues18 |> mutate(across(pregunta_variable_continua(cues18), ~ factor_a
 # Merging the social context information with the test results and the number of crimes around the school for that year
 # I only consider schools that have information of crime
 caracteristicas_2018 <- junta_resultados_crimen(2018)
+
+caracteristicas_2018 <- caracteristicas_2018 |>
+  mutate(TUTOR_DEGREE = if_else(BP11 == 1 | BP12 == 1, 1, 0), .after = MEAN_CALIF_MAT_ESCUELA) |>
+  rowwise() |>
+  mutate(INDEX_ESFUERZO = (sum(c_across(BP66:BP77), na.rm = T))/10, .after = TUTOR_DEGREE) |>
+  mutate(INDEX_ESFUERZO = if_else(is.na(TUTOR_DEGREE), NA_real_, INDEX_ESFUERZO))
 
 # Junior High Schools 2019 SECUNDARIAS 2019 --------------------------------------------------------
 # Grades Database (Planea Results)
@@ -582,6 +580,17 @@ escuelas_sin_dos_obs <- panel_secundarias_alumnos |>
 panel_secundarias_alumnos <- panel_secundarias_alumnos |> 
   filter(ID_UNICO %notin% escuelas_sin_dos_obs)
 
+# In order to have the panel complete for the model, let just add two more variables.
+# The first indicates if one of the two parents have at least a college degree.
+# This might be helpful in order to account for single parents
+paste(panel_secundarias_alumnos |> select(P_66:P_77) |> names(), collapse = ",")
+
+panel_secundarias_alumnos <- panel_secundarias_alumnos |>
+  mutate(TUTOR_DEGREE = if_else(P_11 == 1 | P_12 == 1, 1, 0), .after = MEAN_CALIF_MAT_ESCUELA) |>
+  rowwise() |>
+  mutate(INDEX_ESFUERZO = (sum(c_across(P_66:P_77), na.rm = T))/10, .after = TUTOR_DEGREE) |>
+  mutate(INDEX_ESFUERZO = if_else(is.na(TUTOR_DEGREE), NA_real_, INDEX_ESFUERZO))
+
 # For completeness, in the case of elementary schools a panel is only possible with the results
 # and no other context variable
 
@@ -600,9 +609,8 @@ caracteristicas_2016 <- caracteristicas_2016 |> mutate(YEAR = 2016, .after = NOM
 # Setting 2018
 match_2018 <- caracteristicas_2018 |>
   mutate(NIVEL = toupper(NIVEL)) |>
+  mutate(YEAR = 2018, .after = NOMBRE_CT) |>
   select(all_of(names(caracteristicas_2016)))
-
-match_2018 <- match_2018 |> mutate(YEAR = 2018, .after = NOMBRE_CT)
 
 # Panel elementary schools (only results and crime)
 panel_primarias_alumnos <- map2_df(caracteristicas_2016, match_2018, c)
