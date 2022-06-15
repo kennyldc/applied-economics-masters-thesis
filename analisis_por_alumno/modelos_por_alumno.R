@@ -1,14 +1,11 @@
-# Script for running some regresion models for my master's thesis at the student level
+# Script for running some models for my master's thesis at the student level
 
-pacman::p_load(tidyverse, janitor, broom, fixest, factoextra)
+pacman::p_load(tidyverse, janitor, broom, fixest, factoextra, lfe)
 
-# setwd("/Users/carloslopezdelacerda/Documents/tesis_eco_aplicada/analisis_por_alumno")
-# 
 # # Information about results and crime for each student
-# caracteristicas_2016 <- readRDS("caracteristicas_2016.rds")
-# caracteristicas_2017 <- readRDS("caracteristicas_2017.rds")
-# caracteristicas_2018 <- readRDS("caracteristicas_2018.rds")
-# caracteristicas_2019 <- readRDS("caracteristicas_2019.rds")
+panel_secundarias_alumnos <- readRDS("panel_secundarias_alumnos.rds")
+panel_primarias_alumnos <- readRDS("panel_primarias_alumnos.rds")
+caracteristicas_2018 <- readRDS("caracteristicas_2018.rds")
 
 # Dictionary of the Social Context questionnaire database  --------------------------------------------------
 # The dictionary is not intended to  make data analysis, however I will bring into R the question and the code (variable for each year)
@@ -17,44 +14,44 @@ diccionario <- googlesheets4::read_sheet("https://docs.google.com/spreadsheets/d
 diccionario <- diccionario |> select(pregunta, categoria, cues17, cues18, cues19) |> remove_empty()
 # For the sake of comparability in each year of the analysis I will only use questions that were made every year.
 preguntas_todos <- diccionario |> drop_na()
+# The following questions are cancelled from the analysis because are poorly designed
+preguntas_todos <- preguntas_todos |> filter((pregunta != "¿En la escuela le dan clases en la lengua indígena?") & 
+                                               (pregunta != "Frecuencia falta tiempo para terminar tarea"))
 
 # Functions ---------------------------------------------------------------
-
-my_feols <-  function(y_dep, tipo_delito, vcov_spec, datos){
-  #seccion_examen <- deparse(substitute(seccion_examen))
-  #tipo_delito <- deparse(substitute(tipo_delito))
-  f <- formula(paste(y_dep, "~", tipo_delito))
-  reg <- feols(f, vcov = vcov_spec, data = datos)
-  treg <- cbind(tidy(reg), tibble(r2 = fitstat(reg, ~ r2)$r2))
-  treg <- treg |> mutate(across(where(is.numeric), ~ round(.,4)))
-  treg <- treg |> mutate(especificacion = paste(y_dep, "~", tipo_delito),
-                         delito = case_when(grepl("TIPO1", especificacion) ~ "PUBLICO",
-                                            grepl("TIPO2", especificacion) ~ "PRIVADO",
-                                            grepl("TIPO3", especificacion) ~ "HOMICIDIO",
-                                            TRUE ~ "TODOS"),
-                         delito = as.factor(delito),
-                         distancia = case_when(grepl("D250", especificacion) ~ "250",
-                                               grepl("D500", especificacion) ~ "500",
-                                               TRUE ~ "1000"),
-                         dias = case_when(grepl("T10", especificacion) ~ "10",
-                                          grepl("T29", especificacion) ~ "29",
-                                          TRUE ~ "90"))
-  treg <- treg |> select(especificacion, term, delito:last_col(), estimate:r2) |> arrange(especificacion)
-}
-
-estimaciones_simples <- function(seccion, datos_car){
-  map_df(combinaciones_delitos, function(x){my_feols(seccion, x, "HC1", datos_car)})
-}
-
-multiple_t_test <- function(caracteristicas){
-  alumnos_cuestionario <- caracteristicas |> filter(ASISTENCIA_CONTEXTO == "PRES")
-  alumnos_NA <- alumnos_cuestionario[rowSums(is.na(alumnos_cuestionario)) > 0,]
-  preguntas <- names(alumnos_NA[,26:188])
-  bt_multi <- lapply(preguntas, \(x){cr <- t.test(alumnos_NA |> pull(x), 
-                                                  alumnos_cuestionario |> drop_na()  |> pull(x))
-  cr$p.value})
-  t_test <- tibble(pregunta = preguntas, valor_p = unlist(bt_multi)) |> 
-    mutate(relacion = if_else(valor_p < 0.1, "DIFERENTES", "IGUALES"))
+# Function to run multiple regressions with fixed effects, and if wanted: weights. The function returns a summary table
+reg_felm <-  function(seccion_examen, tipo_delito, datos){
+  f <- formula(paste(seccion_examen, "~", tipo_delito, "| ID_UNICO + YEAR | 0 | ID_UNICO")) # specification with fixed effects and class formula
+  regresion <- felm(f, data = datos) # the function to run fixed effects regressions without weights
+  tabla <- summary(regresion)$coefficients # gets the coefficients info (coef, sd, p value)
+  tabla <- tibble::rownames_to_column(as.data.frame(tabla), "termino") # format the results to dataframe
+  adjr <- tibble(adj_r_squared = summary(regresion)$r.squared) # gets the adjusted R2 of the regression
+  tabla <- cbind(tabla, adjr) # adds the adjusted R to the dataframe in order to get a summary
+  # adding format to get the specification, the type of crime, distance and the number of days into the summary table
+  tabla <- tabla |> mutate(especificacion = paste(seccion_examen, "~", tipo_delito),
+                           delito = case_when(grepl("TIPO1", especificacion) ~ "PUBLICO",
+                                              grepl("TIPO2", especificacion) ~ "PRIVADO",
+                                              grepl("TIPO3", especificacion) ~ "HOMICIDIO",
+                                              TRUE ~ "TODOS"),
+                           delito = as.factor(delito),
+                           distancia = case_when(grepl("D250", especificacion) ~ "250",
+                                                 grepl("D500", especificacion) ~ "500",
+                                                 TRUE ~ "1000"),
+                           dias = case_when(grepl("T10", especificacion) ~ "10",
+                                            grepl("T29", especificacion) ~ "29",
+                                            TRUE ~ "90"))
+  tabla <- tabla |> mutate(across(where(is.numeric), ~ round(., digits = 4)),
+                           across(`Pr(>|t|)`, ~ round(., digits = 3)),
+                           astericos = case_when(`Pr(>|t|)` <= 0.01 ~ "***",
+                                                 (`Pr(>|t|)` > 0.01 & `Pr(>|t|)` <= 0.05) ~ "**",
+                                                 (`Pr(>|t|)` > 0.05 & `Pr(>|t|)` <= 0.1) ~ "*",
+                                                 TRUE ~ ""), .after = Estimate)
+  tabla <- tabla |> mutate(distancia = as.numeric(distancia),
+                           dias = as.numeric(dias))
+  tabla <- tabla |> filter(grepl("INC", termino))
+  tabla <- tabla |> select(-`t value`,-`Cluster s.e.`)
+  tabla <- tabla |> select(especificacion, termino, delito:last_col(), Estimate:adj_r_squared)
+  return(tabla)
 }
 
 my_pca <- function(data, cuestionario, proportion_of_variance){
@@ -77,15 +74,27 @@ my_pca <- function(data, cuestionario, proportion_of_variance){
     filter(importance_of_components == "Cumulative Proportion" & value < proportion_of_variance) |> tail(1) |> pull(PC)
   pc_number_soc <- pivot_longer(importance_soc, cols = 2:last_col(), names_to = "PC", values_to = "value") |>
     filter(importance_of_components == "Cumulative Proportion" & value < proportion_of_variance) |> tail(1) |> pull(PC)
-  variance_explained_eco <- importance_eco |> select(1:all_of(pc_number_eco))
-  variance_explained_aca <- importance_aca |> select(1:all_of(pc_number_aca))
-  variance_explained_soc <- importance_soc |> select(1:all_of(pc_number_soc))
+  variance_explained_eco <- importance_eco |> select(1:all_of(pc_number_eco)) |>
+    rename_with( ~ gsub("PC", "ECO_PC_", .x, fixed = TRUE))
+  variance_explained_aca <- importance_aca |> select(1:all_of(pc_number_aca)) |>
+    rename_with( ~ gsub("PC", "ACA_PC_", .x, fixed = TRUE))
+  variance_explained_soc <- importance_soc |> select(1:all_of(pc_number_soc)) |>
+    rename_with( ~ gsub("PC", "SOC_PC_", .x, fixed = TRUE))
   contribution_to_variance_eco <- as_tibble(get_pca_var(comp_eco)$contrib, rownames = "preguntas") |>
-    rename_with( ~ gsub("Dim.", "PC", .x, fixed = TRUE)) |> select(1:all_of(pc_number_eco))
+    rename_with( ~ gsub("Dim.", "PC", .x, fixed = TRUE)) |> select(1:all_of(pc_number_eco)) |>
+    rename_with( ~ gsub("PC", "ECO_PC_", .x, fixed = TRUE)) |>
+    left_join(preguntas_todos |> rename(preguntas = cues17) |> select(pregunta, preguntas)) |>
+    select(preguntas, pregunta, ECO_PC_1:last_col())
   contribution_to_variance_aca <- as_tibble(get_pca_var(comp_aca)$contrib, rownames = "preguntas") |>
-    rename_with( ~ gsub("Dim.", "PC", .x, fixed = TRUE)) |> select(1:all_of(pc_number_aca))
+    rename_with( ~ gsub("Dim.", "PC", .x, fixed = TRUE)) |> select(1:all_of(pc_number_aca)) |>
+    rename_with( ~ gsub("PC", "ACA_PC_", .x, fixed = TRUE)) |>
+    left_join(preguntas_todos |> rename(preguntas = cues17) |> select(pregunta, preguntas)) |>
+    select(preguntas, pregunta, ACA_PC_1:last_col())
   contribution_to_variance_soc <- as_tibble(get_pca_var(comp_soc)$contrib, rownames = "preguntas") |>
-    rename_with( ~ gsub("Dim.", "PC", .x, fixed = TRUE)) |> select(1:all_of(pc_number_soc))
+    rename_with( ~ gsub("Dim.", "PC", .x, fixed = TRUE)) |> select(1:all_of(pc_number_soc)) |>
+    rename_with( ~ gsub("PC", "SOC_PC_", .x, fixed = TRUE)) |>
+    left_join(preguntas_todos |> rename(preguntas = cues17) |> select(pregunta, preguntas)) |>
+    select(preguntas, pregunta, SOC_PC_1:last_col())
   coordinates_eco <- as_tibble(get_pca_ind(comp_eco)$coord) |>
     rename_with( ~ gsub("Dim.", "PC", .x, fixed = TRUE)) |> select(1:all_of(pc_number_eco)) |>
     rename_with( ~ gsub("PC", "ECO_PC", .x, fixed = TRUE))
@@ -104,207 +113,262 @@ my_pca <- function(data, cuestionario, proportion_of_variance){
                       coordinates = list(eco = coordinates_eco,
                                          aca = coordinates_aca,
                                          soc = coordinates_soc))
+  pca_results
+}
+
+my_feols <-  function(y_dep, tipo_delito, vcov_spec, datos){
+  f <- formula(paste(y_dep, "~", tipo_delito))
+  reg <- feols(f, vcov = vcov_spec, data = datos)
+  treg <- cbind(tidy(reg), tibble(r2 = fitstat(reg, ~ r2)$r2))
+  treg <- treg |> mutate(across(where(is.numeric), ~ round(.,4)))
+  treg <- treg |> mutate(especificacion = paste(y_dep, "~", tipo_delito),
+                         delito = case_when(grepl("TIPO1", especificacion) ~ "PUBLICO",
+                                            grepl("TIPO2", especificacion) ~ "PRIVADO",
+                                            grepl("TIPO3", especificacion) ~ "HOMICIDIO",
+                                            TRUE ~ "TODOS"),
+                         delito = as.factor(delito),
+                         distancia = case_when(grepl("D250", especificacion) ~ "250",
+                                               grepl("D500", especificacion) ~ "500",
+                                               TRUE ~ "1000"),
+                         dias = case_when(grepl("T10", especificacion) ~ "10",
+                                          grepl("T29", especificacion) ~ "29",
+                                          TRUE ~ "90"))
+  treg <- treg |> select(especificacion, term, delito:last_col(), estimate:r2) |> arrange(especificacion)
+  treg <- treg |> filter(grepl("INC", term))
+  treg <- treg |> mutate(across(where(is.numeric), ~ round(., digits = 4)),
+                         across(p.value, ~ round(., digits = 3)),
+                         astericos = case_when(p.value <= 0.01 ~ "***",
+                                               (p.value > 0.01 & p.value <= 0.05) ~ "**",
+                                               (p.value > 0.05 & p.value <= 0.1) ~ "*",
+                                               TRUE ~ ""), .after = estimate)
+  treg <- treg |> select(-std.error,-statistic)
 }
 
 aca_combinaciones <- function(base_con_pc){
-  eco_soc_pc <- paste0(names(base_con_pc |> select(all_of(matches(c("ECO", "SOC"))))), collapse = " + ")
-  lapply(combinaciones_delitos, function(x){paste0(x, " + ", eco_soc_pc, " + CALIF_MAT + CALIF_ESP + TURNO_BASE + FINANCIAMIENTO")})
-}
-
-regresiones_con_aca_pc <- function(y, datos, aca_combinaciones_year, kilometros = NULL, dias_escolares = NULL){
-  if(is.null(kilometros) & is.null(dias_escolares)){
-    map_df(aca_combinaciones_year, \(x){my_feols(y, x, "iid", datos)}) |> 
-      filter(str_detect(term, "(Intercept)") | str_detect(term, "INC")) |> arrange(especificacion)
-  }
-  else{
-    map_df(aca_combinaciones_year, \(x){my_feols(y, x, "iid", datos)}) |> 
-      filter(str_detect(term, "(Intercept)") | str_detect(term, "INC")) |> arrange(especificacion) |>
-      filter(distancia == kilometros & dias == dias_escolares)
-  }
-}
-
-resumen_regresiones <- function(base_con_pc, aca_combinaciones, kilometros = NULL, dias_escolares = NULL){
-  lapply(names(base_con_pc |> select(all_of(matches("ACA")))),
-         \(x){regresiones_con_aca_pc(x, base_con_pc, aca_combinaciones, kilometros, dias_escolares)})
+  pcs <- paste0(names(base_con_pc |> select(all_of(matches(c("ECO", "SOC", "ACA"))))), collapse = " + ")
+  lapply(combinaciones_delitos, function(x){paste0(x, " + ", pcs)})
 }
 
 # Models ------------------------------------------------------------------
-# Getting combinations of crimes
-combinaciones_delitos <- names(caracteristicas_2016[,25:60])
-
-# Getting the more simple regression of grade ~ crime
-efecto_simple_primarias_2016 <- list(esp = estimaciones_simples("CALIF_ESP", caracteristicas_2016 |> filter(NIVEL == "primaria")),
-                                     mate = estimaciones_simples("CALIF_MAT", caracteristicas_2016 |> filter(NIVEL == "primaria")))
-
-efecto_simple_secundarias_2016 <- list(esp = estimaciones_simples("CALIF_ESP", caracteristicas_2016 |> filter(NIVEL == "secundaria")),
-                                     mate = estimaciones_simples("CALIF_MAT", caracteristicas_2016 |> filter(NIVEL == "secundaria")))
-
-efecto_simple_2017 <- list(esp = estimaciones_simples("CALIF_ESP", caracteristicas_2017),
-                           mate = estimaciones_simples("CALIF_MAT", caracteristicas_2017))
-
-efecto_simple_2018 <- list(esp = estimaciones_simples("CALIF_ESP", caracteristicas_2018),
-                           mate = estimaciones_simples("CALIF_MAT", caracteristicas_2018))
-
-efecto_simple_2019 <- list(esp = estimaciones_simples("CALIF_ESP", caracteristicas_2019),
-                           mate = estimaciones_simples("CALIF_MAT", caracteristicas_2019))
-
-# Analysis of the context questionnaire 
-
-# The questions were made in 2017 to 2019. Each question is categorized either as: 1) economics, 2) social, 3) academic
-# In this section I examine if crime has an effect in this questions. 
-
-# I will start with simple examples 
-# With the question of the number of rooms to sleep
-map_df(combinaciones_delitos, \(x){my_feols("P_10", x, "iid", caracteristicas_2017)}) |> arrange(especificacion)
-# for almost all combinations an increase in one crime relates to a *decrease* in the number of rooms to sleep.
-
-# With the question wether the student repeated a school year
-map_df(combinaciones_delitos, \(x){my_feols("P_17", x, "iid", caracteristicas_2017)}) |> arrange(especificacion)
-# For almost all combinations an increase in one crime realates to an *increase* in the probability that the student has repeated a school year.
-
-# When asked what year they believe they will study
-map_df(combinaciones_delitos, \(x){my_feols("P_54_D", x, "iid", caracteristicas_2017)}) |> arrange(especificacion)
-# For almost all combinations an increase in one crime relates to a *decrease* in the probability that the student believe he/she will study graduate school
-
-# It is a constant that the combinations that have few kilometers and few days are more noisy than the rest. 
-# This could be a sign of lack of statistical power for those combinations.
-
-
-# PCA Analysis 2017 - With Academics PC's --------------------------------------
-
-# I will combine the questions from the same category with a dimensionality reduction technique due to the enormous amount of combinations.
-# Starting with 2017, students that did not answer any of the context questions (i.e. they were absent that day) are not useful for the analysis
-alumnos_cuestionario_2017 <- caracteristicas_2017 |> filter(ASISTENCIA_CONTEXTO == "PRES")
-
-# Let apply pca to 2017
-# Unfortunately, PCA does not allow any NA, so I'll have to drop some entries
-# I will leave as a future assignment to verify if NA's are related to crime
-#df <- multiple_t_test(caracteristicas_2017)
-
-# For now, I'll need to assume that missing data is random (MAR, Missing at Random) and drop every row with at least one NA
-alumnos_cuestionario_2017 <- alumnos_cuestionario_2017 |> drop_na()
-# I end up with 47,322 students from junior high school level
+# Getting right hand coefficient terms of the regression specifications -------------------------------------------------
+# getting the name of variables that will enter as independent variables
+combinaciones_delitos <- names(panel_secundarias_alumnos)[82:117]
 
 # I apply PCA for each category available in the dictionary (economics, social and academic) related to the questionnaire
 # to the following function is necessary to select a cut-off percentage of variance explained.  
 # The function selects the number of principal components that cover that percentage of variance and returns a list with: a) proportion of variance explained, 
 # b) contribution of each question in the questionnaire to the pc, and c) the coordinates of every student (only complete cases i.e. without NA)
+# Unfortunately, PCA does not allow any NA, so I'll have to drop some entries
+# I will leave as a future assignment to verify if NA's are related to crime
+# For now, I'll need to assume that missing data is random (MAR, Missing at Random) and drop every row with at least one NA
+panel_sin_na <- panel_secundarias_alumnos |> drop_na()
+# I end up with 95,645 students from junior high school level
 
-pca_resultados_2017 <- my_pca(alumnos_cuestionario_2017, cues17, 0.605)
+pca_panel_sin_na <- my_pca(panel_sin_na, cues17, 0.605)
 
 # I can access to the proportion of variance as (for eco as an example)
-pca_resultados_2017$variance_explained$eco
+pca_panel_sin_na$variance_explained$eco
 # I can access the contribution of each question to the pc (for social as example)
-pca_resultados_2017$contribution_to_variance$soc
+pca_panel_sin_na$contribution_to_variance$soc
 # An the coordinates of every student (for academic as example)
-pca_resultados_2017$coordinates$aca
+pca_panel_sin_na$coordinates$aca
 
 # Let reshape the dataframe and instead of the questions (as literal) take the PC for each section 
 # (every column is marked with the inicial of the section, for example PC for eco are ECO_PC1, ECO_PC2 and so on)
-base_con_pc_2017 <- cbind(alumnos_cuestionario_2017 |> select(NOFOLIO:MEAN_CALIF_MAT_ESCUELA),
-      pca_resultados_2017$coordinates$eco,
-      pca_resultados_2017$coordinates$aca,
-      pca_resultados_2017$coordinates$soc,
-      alumnos_cuestionario_2017 |> select(INC_TIPO1_D250_T90H:INC_TIPO3_D1000_T10H))
+base_con_pc<- cbind(panel_sin_na |> select(NOFOLIO:INDEX_ESFUERZO),
+                    pca_panel_sin_na$coordinates$eco,
+                    pca_panel_sin_na$coordinates$aca,
+                    pca_panel_sin_na$coordinates$soc,
+                    panel_sin_na |> select(INC_TIPO1_D250_T90H:INC_TIPO3_D1000_T10H))
 
-# Let create the RHS terms of the regressions such that ACA_PC ~ CRIME + CONTROLS
-# Controls are all of the PCs for Eco and Social + calif mat + calif_esp + turno + financiamiento
-aca_combinaciones_2017 <- aca_combinaciones(base_con_pc_2017)
+# Let create the RHS terms of the regressions such that CALIF ~ CRIME + CONTROLS
+incidentes_mas_controles <- aca_combinaciones(base_con_pc)
 
-# Apply the regressions for each LHS term of the regressions that correspond to each ACA_PC
-# Warning: The following line of code is slow.
-# Returns a list of dataframes with the results of each regression of ACA_PC ~ crime + controls
-# There is a regression for each combination of crime after controlling for everything possible in the context questionnaire!
-regresiones_aca_2017 <- resumen_regresiones(base_con_pc_2017, aca_combinaciones_2017)
+coef_pos <- unlist(incidentes_mas_controles)
+combinacion_genero <- modify2(coef_pos, modify(combinaciones_delitos, function(x){paste0(x, " * GENERO")}), ~ paste0(.x, " + ", .y))
+combinacion_tutor_degree <- modify2(coef_pos, modify(combinaciones_delitos, function(x){paste0(x, " * TUTOR_DEGREE")}), ~ paste0(.x, " + ", .y))
+combinacion_poder_adquisitivo <- modify2(coef_pos, modify(combinaciones_delitos, function(x){paste0(x, " * ECO_PC1")}), ~ paste0(.x, " + ", .y))
+combinacion_numero_gente_en_casa <- modify2(coef_pos, modify(combinaciones_delitos, function(x){paste0(x, " * ECO_PC3")}), ~ paste0(.x, " + ", .y))
+combinacion_horas_no_escuela <- modify2(coef_pos, modify(combinaciones_delitos, function(x){paste0(x, " * ECO_PC4")}), ~ paste0(.x, " + ", .y))
+combinacion_escolaridad_casa <- modify2(coef_pos, modify(combinaciones_delitos, function(x){paste0(x, " * SOC_PC1")}), ~ paste0(.x, " + ", .y))
+combinacion_raices_indigenas <- modify2(coef_pos, modify(combinaciones_delitos, function(x){paste0(x, " * SOC_PC2")}), ~ paste0(.x, " + ", .y))
 
-# The big amount of combinations for crimes make the dataframes big and almost non-interpretable.
-# We also saw that combinations with short distance and few days are noisy.
-# Therefore we can repeat the exercise of getting all the regressions of ACA_PC ~ crime + controls but for only one combination of crime and distance
-# Warning: The following line of code is slow.
-regresiones_aca_2017_km_dias <- resumen_regresiones(base_con_pc_2017, aca_combinaciones_2017, 500, 29)
+terminos_coef_posibles <- list(incidentes = coef_pos, 
+                               inter_genero = combinacion_genero,
+                               inter_tutor_degree = combinacion_tutor_degree,
+                               inter_poder_adquisitivo = combinacion_poder_adquisitivo,
+                               inter_numero_gente = combinacion_numero_gente_en_casa, 
+                               inter_horas_no_escuela = combinacion_horas_no_escuela,
+                               inter_escolaridad_casa = combinacion_escolaridad_casa,
+                               inter_raices_indigenas = combinacion_raices_indigenas)
 
-# Results for ACA_PC1 ~ crime + controls
-regresiones_aca_2017[1] 
-# or
-df <- regresiones_aca_2017_km_dias[1]
+resumen_estimaciones <- function(seccion, datos_panel){
+  lapply(terminos_coef_posibles, \(x){
+    map_df(x, \(x) reg_felm(seccion, x, datos_panel))})}
 
-# and so on for each ACA_PC...
-lapply(1:ncol(base_con_pc_2017 |> select(all_of(matches("ACA")))),
-       \(x){regresiones_aca_2017_km_dias[x]})
+## Result for model secundarias
 
-##############################################################
-# Here I have two main problems:
-# 1) ACA_PC_{i}  is completely difficult to interpret even though I have the importance of each question, as
-pca_resultados_2017$contribution_to_variance$aca
-# Questions are disaggregated by choices in the questionnaire. I will attempt to fix it by transforming the ACA questions to yes or no answers.
-# However, there is a second problem; 2) R2 of each regression is too low. 
-##############################################################
+# ejemplo <- felm(CALIF_ESP ~ INC_TIPO3_D250_T29H | ID_UNICO + YEAR | 0 | ID_UNICO, data=panel_secundarias_alumnos)
+# ejemplo_feols <- feols(CALIF_ESP ~ INC_TIPO3_D250_T29H | ID_UNICO + YEAR, panel_secundarias_alumnos)
 
-# PCA Analysis 2018 - With Academics PC's --------------------------------------
-# For the sake of comparability, I'll repeat the analysis for 2018
-# Removing students that did not answer any of the context questions (i.e. they were absent that day)
-alumnos_cuestionario_2018 <- caracteristicas_2018 |> filter(ASISTENCIA_CONTEXTO == "PRES")
+estimaciones_espanol_alumno <- resumen_estimaciones("CALIF_ESP", base_con_pc)
+estimaciones_matematicas_alumno <- resumen_estimaciones("CALIF_MAT", base_con_pc)
 
-# Assuming that missing data is random (MAR, Missing at Random) and dropping every row with at least one NA
-alumnos_cuestionario_2018 <- alumnos_cuestionario_2018 |> drop_na()
-# I end up with 71,639 students from elementary school level
+# Changing the variable to measure student achievement --------------------
 
-# Apply PCA for each category available in the dictionary (economics, social and academic) related to the questionnaire
-# With cut-off percentage of variance explained of 60.5%. 
-# Return a list with proportion of variance explained, contribution for each question and coordinates
-pca_resultados_2018 <- my_pca(alumnos_cuestionario_2018, cues18, 0.605)
+# in the following model instead of using the test score (calif) I will use an "effort index" constructed from the social context
 
-# Let reshape the dataframe and instead of the questions (as literal) take the PC for each section 
-base_con_pc_2018 <- cbind(alumnos_cuestionario_2018 |> select(NOFOLIO:MEAN_CALIF_MAT_ESCUELA),
-                          pca_resultados_2018$coordinates$eco,
-                          pca_resultados_2018$coordinates$aca,
-                          pca_resultados_2018$coordinates$soc,
-                          alumnos_cuestionario_2018 |> select(INC_TIPO1_D250_T90H:INC_TIPO3_D1000_T10H))
+# Let create the RHS terms of the regressions such that ESFUERZO ~ CRIME + CONTROL ECO + CONTROL SOC
+# Different to the previous estimations, here I only control for eco + soc because esfuerzo is made from ACA variables.
 
-# RHS terms of the regressions such that ACA_PC ~ CRIME + CONTROLS
-# Controls are all of the PCs for Eco and Social + calif mat + calif_esp + turno + financiamiento
-aca_combinaciones_2018 <- aca_combinaciones(base_con_pc_2018)
+combinaciones_esfuerzo <- function(base_con_pc){
+  eco_soc_pc <- paste0(names(base_con_pc |> select(all_of(matches(c("ECO", "SOC"))))), collapse = " + ")
+  lapply(combinaciones_delitos, function(x){paste0(x, " + ", eco_soc_pc)})
+}
 
-# Apply the regressions for each LHS term of the regressions that correspond to each ACA_PC
-# Returns a list of dataframes with the results of each regression of ACA_PC ~ crime + controls
-# There is a regression for each combination of crime after controlling for everything possible in the context questionnaire!
-regresiones_aca_2018 <- resumen_regresiones(base_con_pc_2018, aca_combinaciones_2018)
+incidentes_esfuerzo <- combinaciones_esfuerzo(base_con_pc)
 
-# Repeat the exercise of getting all the regressions of ACA_PC ~ crime + controls but for only one combination of crime and distance
-regresiones_aca_2018_km_dias <- resumen_regresiones(base_con_pc_2018, aca_combinaciones_2018, kilometros = 500, dias_escolares = 29)
+# Same combinations as above for comparability
 
-# Results for ACA_PC1 ~ crime + controls
-lapply(1:ncol(base_con_pc_2018 |> select(all_of(matches("ACA")))),
-       \(x){regresiones_aca_2018_km_dias[x]})
+coef_esfuerzo <- unlist(incidentes_esfuerzo)
+esfuerzo_genero <- modify2(coef_esfuerzo, modify(combinaciones_delitos, function(x){paste0(x, " * GENERO")}), ~ paste0(.x, " + ", .y))
+esfuerzo_tutor_degree <- modify2(coef_esfuerzo, modify(combinaciones_delitos, function(x){paste0(x, " * TUTOR_DEGREE")}), ~ paste0(.x, " + ", .y))
+esfuerzo_poder_adquisitivo <- modify2(coef_esfuerzo, modify(combinaciones_delitos, function(x){paste0(x, " * ECO_PC1")}), ~ paste0(.x, " + ", .y))
+esfuerzo_numero_gente_en_casa <- modify2(coef_esfuerzo, modify(combinaciones_delitos, function(x){paste0(x, " * ECO_PC3")}), ~ paste0(.x, " + ", .y))
+esfuerzo_horas_no_escuela <- modify2(coef_esfuerzo, modify(combinaciones_delitos, function(x){paste0(x, " * ECO_PC4")}), ~ paste0(.x, " + ", .y))
+esfuerzo_escolaridad_casa <- modify2(coef_esfuerzo, modify(combinaciones_delitos, function(x){paste0(x, " * SOC_PC1")}), ~ paste0(.x, " + ", .y))
+esfuerzo_raices_indigenas <- modify2(coef_esfuerzo, modify(combinaciones_delitos, function(x){paste0(x, " * SOC_PC2")}), ~ paste0(.x, " + ", .y))
 
-# Mostly same problems as before
-# 1) ACA_PC_{i}  is completely difficult to interpret
-# 2) R2 of each regression is too low. 
+terminos_esfuerzo <- list(incidentes = coef_esfuerzo, 
+                               inter_genero = esfuerzo_genero,
+                               inter_tutor_degree = esfuerzo_tutor_degree,
+                               inter_poder_adquisitivo = esfuerzo_poder_adquisitivo,
+                               inter_numero_gente = esfuerzo_numero_gente_en_casa, 
+                               inter_horas_no_escuela = esfuerzo_horas_no_escuela,
+                               inter_escolaridad_casa = esfuerzo_escolaridad_casa,
+                               inter_raices_indigenas = esfuerzo_raices_indigenas)
 
-# PCA Analysis 2019 - With Academics PC's --------------------------------------
-# For the sake of comparability, I'll repeat the analysis for 2019
-# Removing students that did not answer context and assuming MAR
-alumnos_cuestionario_2019 <- caracteristicas_2019 |> filter(ASISTENCIA_CONTEXTO == "PRES") |> drop_na()
-# 48,252 students from junior high school in 2019 (almost the same as 2017)
+resumen_esfuerzo <- function(seccion, datos_panel){
+  lapply(terminos_esfuerzo, \(x){
+    map_df(x, \(x) reg_felm(seccion, x, datos_panel))})}
 
-# Apply PCA for each category available in the dictionary and percentage of variance explained of 60.5%. 
-pca_resultados_2019 <- my_pca(alumnos_cuestionario_2019, cues19, 0.605)
+## Results for index esfuerzo
+estimaciones_index_esfuerzo <- resumen_esfuerzo("INDEX_ESFUERZO", base_con_pc)
 
-# Let reshape the dataframe and instead of the questions (as literal) take the PC for each section 
-base_con_pc_2019 <- cbind(alumnos_cuestionario_2019 |> select(NOFOLIO:MEAN_CALIF_MAT_ESCUELA),
-                          pca_resultados_2019$coordinates$eco,
-                          pca_resultados_2019$coordinates$aca,
-                          pca_resultados_2019$coordinates$soc,
-                          alumnos_cuestionario_2019 |> select(INC_TIPO1_D250_T90H:INC_TIPO3_D1000_T10H))
+# estimacion panel FE para primarias  -------------------------------------
 
-# Apply the regressions for each LHS term of the regressions that correspond to each ACA_PC
-regresiones_aca_2019 <- resumen_regresiones(base_con_pc_2019, aca_combinaciones(base_con_pc_2019))
+resumen_primarias <- function(seccion, datos_panel){
+  map_df(combinaciones_delitos, \(x) reg_felm(seccion, x, datos_panel))
+}
 
-# Repeat the exercise of getting all the regressions of ACA_PC ~ crime + controls but for only one combination of crime and distance
-regresiones_aca_2019_km_dias <- resumen_regresiones(base_con_pc_2019, aca_combinaciones(base_con_pc_2019), kilometros = 500, dias_escolares = 29)
+## Result for model primarias
+# ejemplo_primarias <- feols(CALIF_ESP ~ INC_TIPO3_D250_T29H | ID_UNICO + YEAR, panel_primarias_alumnos)
 
-# Results for ACA_PC1 ~ crime + controls
-lapply(1:ncol(base_con_pc_2019 |> select(all_of(matches("ACA")))),
-       \(x){regresiones_aca_2019_km_dias[x]})
+estimaciones_espanol_alumno_primarias <- resumen_primarias("CALIF_ESP", panel_primarias_alumnos)
+estimaciones_matematicas_alumno_primarias <- resumen_primarias("CALIF_MAT", panel_primarias_alumnos)
 
-# Mostly same problems as before
+# Last models - Mechanisms from literature ------------------------------
+# According to the literature some mechanisms that explain the role of violent crimes in academic development are
+# b) Disminución de la actividad económica de la comunidad, 
+# d) Deterioro en la calidad de la oferta en los centros educativos.
+
+# I will only run some OLS regressions to see for each year in the context data if these relations hold
+# This are more like sanity checks instead of a more complex estimations.
+# Also, the estimates are more of the correlation type instead of a causal effect.
+
+## Disminucion de la actividad económica, 
+## Does students work more in the labor market in substitution of school?
+## Let estimate a simple LPM
+
+# For 2017 and 2019 RHS
+combinaciones_aca_soc <- function(panel_secundarias_alumnos){
+  eco_soc_pc <- paste0(preguntas_todos |> filter(categoria != "económica") |> pull(cues17), collapse = " + ")
+  lapply(combinaciones_delitos, function(x){paste0(x, " + ", eco_soc_pc)})
+}
+
+incidentes_aca_soc <- unlist(combinaciones_aca_soc(panel_secundarias_alumnos))
+
+# FOR 2018 RHS 
+
+combinaciones_aca_soc_18 <- function(caracteristicas_2018){
+  eco_soc_pc <- paste0(preguntas_todos |> filter(categoria != "económica") |> pull(cues18), collapse = " + ")
+  lapply(combinaciones_delitos, function(x){paste0(x, " + ", eco_soc_pc)})
+}
+
+incidentes_aca_soc_18 <- unlist(combinaciones_aca_soc_18(caracteristicas_2018))
+
+## Function for estimations
+
+estimaciones_simples <- function(y_dep, datos_car, vector_combinaciones){
+  map_df(vector_combinaciones, function(x){my_feols(y_dep, x, ~ID_UNICO, datos_car)})
+}
+
+panel_MLP_secundarias <- panel_secundarias_alumnos |> mutate(MERCADO_LABORAL = if_else(P_20 == 0, 0, 1))
+caracteristicas_2018 <- caracteristicas_2018 |> mutate(MERCADO_LABORAL = if_else(BP20 == 0, 0, 1))
+
+## The coefficients indicate the change in the probability that the student is in the labor market after controlling for each social and academic characteristic
+# For 2017
+participacion_mercado_laboral_2017 <- estimaciones_simples("P_20", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_aca_soc)
+# For 2018
+participacion_mercado_laboral_2018 <- estimaciones_simples("MERCADO_LABORAL", caracteristicas_2018, incidentes_aca_soc_18)
+# For 2019
+participacion_mercado_laboral_2019 <- estimaciones_simples("P_20", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_aca_soc)
+
+preguntas_frecuencia_maestros <- function(cuestionario_year){
+  preguntas_todos |> filter(str_detect(pregunta, "Frecuencia maestros")) |> pull({{cuestionario_year}})
+}
+
+# Does teacher have worse practices?
+## The coefficients indicate the change in the probability that the professor... controlling for eco and soc
+
+combinaciones_soc_eco <- function(panel_secundarias_alumnos){
+  eco_soc_pc <- paste0(preguntas_todos |> filter(categoria != "académica") |> pull(cues17), collapse = " + ")
+  lapply(combinaciones_delitos, function(x){paste0(x, " + ", eco_soc_pc)})
+}
+
+incidentes_soc_eco <- unlist(combinaciones_soc_eco(panel_secundarias_alumnos))
+
+preguntas_frecuencia_maestros(cues17)
+
+# Maestro toma en cuenta opinión
+# For 2017
+maestros_opinion_2017 <- estimaciones_simples("P_56", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_soc_eco)
+# For 2019
+maestros_opinion_2019 <- estimaciones_simples("P_56", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_soc_eco)
+
+# Maestro anima a decir lo que piensa
+# For 2017
+maestros_anima_2017 <- estimaciones_simples("P_58", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_soc_eco)
+# For 2019
+maestros_anima_2019 <- estimaciones_simples("P_58", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_soc_eco)
+
+# Maestro da confianza para preguntar
+# For 2017
+maestros_confianza_2017 <- estimaciones_simples("P_60", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_soc_eco)
+# For 2019
+maestros_confianza_2019 <- estimaciones_simples("P_60", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_soc_eco)
+
+# Maestro organiza actividades con opinión
+# For 2017
+maestros_actividades_2017 <- estimaciones_simples("P_61", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_soc_eco)
+# For 2019
+maestros_actividades_2019 <- estimaciones_simples("P_61", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_soc_eco)
+
+# Maestro toman en cuenta opinion para reglamento
+# PROBABLEMENTE ESTA NO SE REPORTE
+# For 2017
+maestros_reglamento_2017 <- estimaciones_simples("P_62", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_soc_eco)
+# For 2019
+maestros_reglamento_2019 <- estimaciones_simples("P_62", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_soc_eco)
+
+# Maestro animan a expresarse cuando hay molestia
+# For 2017
+maestros_expresarse_cuando_molestia_2017 <- estimaciones_simples("P_64", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_soc_eco)
+# For 2019
+maestros_expresarse_cuando_molestia_2019 <- estimaciones_simples("P_64", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_soc_eco)
+
+# Maestro pide escucharse cuando hay desacuerdo
+# For 2017
+maestros_escucharse_desacuerdo_2017 <- estimaciones_simples("P_65", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_soc_eco)
+# For 2019
+maestros_escucharse_desacuerdo_2019 <- estimaciones_simples("P_65", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_soc_eco)
