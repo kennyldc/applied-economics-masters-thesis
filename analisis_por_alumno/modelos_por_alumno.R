@@ -18,6 +18,9 @@ preguntas_todos <- diccionario |> drop_na()
 preguntas_todos <- preguntas_todos |> filter((pregunta != "¿En la escuela le dan clases en la lengua indígena?") & 
                                                (pregunta != "Frecuencia falta tiempo para terminar tarea"))
 
+# To print tables let use 
+definiciones <- googlesheets4::read_sheet("https://docs.google.com/spreadsheets/d/1pTBmuH9eY8ch8s5lGjEIAPbObtJ0fXR6-tU4dFpP0aY/edit?usp=sharing")
+
 # Functions ---------------------------------------------------------------
 # Function to run multiple regressions with fixed effects, and if wanted: weights. The function returns a summary table
 reg_felm <-  function(seccion_examen, tipo_delito, datos){
@@ -83,17 +86,17 @@ my_pca <- function(data, cuestionario, proportion_of_variance){
   contribution_to_variance_eco <- as_tibble(get_pca_var(comp_eco)$contrib, rownames = "preguntas") |>
     rename_with( ~ gsub("Dim.", "PC", .x, fixed = TRUE)) |> select(1:all_of(pc_number_eco)) |>
     rename_with( ~ gsub("PC", "ECO_PC_", .x, fixed = TRUE)) |>
-    left_join(preguntas_todos |> rename(preguntas = cues17) |> select(pregunta, preguntas)) |>
+    left_join(definiciones |> rename(preguntas = cues17) |> select(pregunta, preguntas)) |>
     select(preguntas, pregunta, ECO_PC_1:last_col())
   contribution_to_variance_aca <- as_tibble(get_pca_var(comp_aca)$contrib, rownames = "preguntas") |>
     rename_with( ~ gsub("Dim.", "PC", .x, fixed = TRUE)) |> select(1:all_of(pc_number_aca)) |>
     rename_with( ~ gsub("PC", "ACA_PC_", .x, fixed = TRUE)) |>
-    left_join(preguntas_todos |> rename(preguntas = cues17) |> select(pregunta, preguntas)) |>
+    left_join(definiciones |> rename(preguntas = cues17) |> select(pregunta, preguntas)) |>
     select(preguntas, pregunta, ACA_PC_1:last_col())
   contribution_to_variance_soc <- as_tibble(get_pca_var(comp_soc)$contrib, rownames = "preguntas") |>
     rename_with( ~ gsub("Dim.", "PC", .x, fixed = TRUE)) |> select(1:all_of(pc_number_soc)) |>
     rename_with( ~ gsub("PC", "SOC_PC_", .x, fixed = TRUE)) |>
-    left_join(preguntas_todos |> rename(preguntas = cues17) |> select(pregunta, preguntas)) |>
+    left_join(definiciones |> rename(preguntas = cues17) |> select(pregunta, preguntas)) |>
     select(preguntas, pregunta, SOC_PC_1:last_col())
   coordinates_eco <- as_tibble(get_pca_ind(comp_eco)$coord) |>
     rename_with( ~ gsub("Dim.", "PC", .x, fixed = TRUE)) |> select(1:all_of(pc_number_eco)) |>
@@ -253,6 +256,8 @@ resumen_esfuerzo <- function(seccion, datos_panel){
     map_df(x, \(x) reg_felm(seccion, x, datos_panel))})}
 
 ## Results for index esfuerzo
+write_clip(estimaciones_index_esfuerzo$inter_raices_indigenas |> filter(delito == "PUBLICO") |> arrange(distancia, -dias))
+
 estimaciones_index_esfuerzo <- resumen_esfuerzo("INDEX_ESFUERZO", base_con_pc)
 
 # estimacion panel FE para primarias  -------------------------------------
@@ -263,6 +268,8 @@ resumen_primarias <- function(seccion, datos_panel){
 
 ## Result for model primarias
 # ejemplo_primarias <- feols(CALIF_ESP ~ INC_TIPO3_D250_T29H | ID_UNICO + YEAR, panel_primarias_alumnos)
+
+write_clip(estimaciones_matematicas_alumno_primarias |> filter(delito == "PUBLICO") |> arrange(distancia, -dias))
 
 estimaciones_espanol_alumno_primarias <- resumen_primarias("CALIF_ESP", panel_primarias_alumnos)
 estimaciones_matematicas_alumno_primarias <- resumen_primarias("CALIF_MAT", panel_primarias_alumnos)
@@ -280,22 +287,13 @@ estimaciones_matematicas_alumno_primarias <- resumen_primarias("CALIF_MAT", pane
 ## Does students work more in the labor market in substitution of school?
 ## Let estimate a simple LPM
 
-# For 2017 and 2019 RHS
+# For Junior high school panel
 combinaciones_aca_soc <- function(panel_secundarias_alumnos){
   eco_soc_pc <- paste0(preguntas_todos |> filter(categoria != "económica") |> pull(cues17), collapse = " + ")
   lapply(combinaciones_delitos, function(x){paste0(x, " + ", eco_soc_pc)})
 }
 
 incidentes_aca_soc <- unlist(combinaciones_aca_soc(panel_secundarias_alumnos))
-
-# FOR 2018 RHS 
-
-combinaciones_aca_soc_18 <- function(caracteristicas_2018){
-  eco_soc_pc <- paste0(preguntas_todos |> filter(categoria != "económica") |> pull(cues18), collapse = " + ")
-  lapply(combinaciones_delitos, function(x){paste0(x, " + ", eco_soc_pc)})
-}
-
-incidentes_aca_soc_18 <- unlist(combinaciones_aca_soc_18(caracteristicas_2018))
 
 ## Function for estimations
 
@@ -304,15 +302,10 @@ estimaciones_simples <- function(y_dep, datos_car, vector_combinaciones){
 }
 
 panel_MLP_secundarias <- panel_secundarias_alumnos |> mutate(MERCADO_LABORAL = if_else(P_20 == 0, 0, 1))
-caracteristicas_2018 <- caracteristicas_2018 |> mutate(MERCADO_LABORAL = if_else(BP20 == 0, 0, 1))
 
 ## The coefficients indicate the change in the probability that the student is in the labor market after controlling for each social and academic characteristic
-# For 2017
-participacion_mercado_laboral_2017 <- estimaciones_simples("P_20", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_aca_soc)
-# For 2018
-participacion_mercado_laboral_2018 <- estimaciones_simples("MERCADO_LABORAL", caracteristicas_2018, incidentes_aca_soc_18)
-# For 2019
-participacion_mercado_laboral_2019 <- estimaciones_simples("P_20", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_aca_soc)
+
+participacion_mercado_laboral <- estimaciones_simples("P_20", panel_MLP_secundarias, incidentes_aca_soc)
 
 preguntas_frecuencia_maestros <- function(cuestionario_year){
   preguntas_todos |> filter(str_detect(pregunta, "Frecuencia maestros")) |> pull({{cuestionario_year}})
@@ -331,44 +324,14 @@ incidentes_soc_eco <- unlist(combinaciones_soc_eco(panel_secundarias_alumnos))
 preguntas_frecuencia_maestros(cues17)
 
 # Maestro toma en cuenta opinión
-# For 2017
-maestros_opinion_2017 <- estimaciones_simples("P_56", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_soc_eco)
-# For 2019
-maestros_opinion_2019 <- estimaciones_simples("P_56", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_soc_eco)
 
-# Maestro anima a decir lo que piensa
-# For 2017
-maestros_anima_2017 <- estimaciones_simples("P_58", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_soc_eco)
-# For 2019
-maestros_anima_2019 <- estimaciones_simples("P_58", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_soc_eco)
+maestros_opinion <- estimaciones_simples("P_56", panel_MLP_secundarias, incidentes_soc_eco)
 
 # Maestro da confianza para preguntar
-# For 2017
-maestros_confianza_2017 <- estimaciones_simples("P_60", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_soc_eco)
-# For 2019
-maestros_confianza_2019 <- estimaciones_simples("P_60", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_soc_eco)
+maestros_confianza <- estimaciones_simples("P_60", panel_MLP_secundarias, incidentes_soc_eco)
 
 # Maestro organiza actividades con opinión
-# For 2017
-maestros_actividades_2017 <- estimaciones_simples("P_61", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_soc_eco)
-# For 2019
-maestros_actividades_2019 <- estimaciones_simples("P_61", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_soc_eco)
-
-# Maestro toman en cuenta opinion para reglamento
-# PROBABLEMENTE ESTA NO SE REPORTE
-# For 2017
-maestros_reglamento_2017 <- estimaciones_simples("P_62", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_soc_eco)
-# For 2019
-maestros_reglamento_2019 <- estimaciones_simples("P_62", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_soc_eco)
-
-# Maestro animan a expresarse cuando hay molestia
-# For 2017
-maestros_expresarse_cuando_molestia_2017 <- estimaciones_simples("P_64", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_soc_eco)
-# For 2019
-maestros_expresarse_cuando_molestia_2019 <- estimaciones_simples("P_64", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_soc_eco)
+maestros_actividades <- estimaciones_simples("P_61", panel_MLP_secundarias, incidentes_soc_eco)
 
 # Maestro pide escucharse cuando hay desacuerdo
-# For 2017
-maestros_escucharse_desacuerdo_2017 <- estimaciones_simples("P_65", panel_MLP_secundarias |> filter(YEAR == 2017), incidentes_soc_eco)
-# For 2019
-maestros_escucharse_desacuerdo_2019 <- estimaciones_simples("P_65", panel_MLP_secundarias |> filter(YEAR == 2019), incidentes_soc_eco)
+maestros_escucharse_desacuerdo <- estimaciones_simples("P_65", panel_MLP_secundarias, incidentes_soc_eco)
